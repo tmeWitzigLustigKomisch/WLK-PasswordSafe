@@ -1,6 +1,6 @@
 # WLK PasswordSafe – Hochsicherer Passwort‑Manager
 
-*Deutsch weiter unten, English version follows below.*
+*English version follows below.*
 
 ## Überblick
 
