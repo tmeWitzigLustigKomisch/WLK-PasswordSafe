@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-wlk_passwordsafe.py – Hochsicherer Passwort‑Manager als Einzeldatei.
+wlk_passwordsafe.py – Hochsicherer Passwort‑Manager als Einzeldatei. \ wlk_passwordsafe.py – Highly secure password manager as a single file.
 
 ### Zusätzliche Funktionen / Additional features
 
@@ -849,6 +849,13 @@ CONFIG_KEYS = [
 # zuständig ist und welche Anpassungen möglich sind. JSON unterstützt keine
 # Kommentare, daher beginnen diese Zeilen mit einem '#' und werden beim
 # Einlesen ignoriert.
+# Explanation texts for each configuration parameter.
+# These German strings describe what each configuration value does.  When the
+# program is running in English mode, a corresponding translation from
+# CONFIG_EXPLANATIONS_EN will be shown instead.  Keeping the German
+# explanations separate from the translations allows the GUI and
+# configuration file comments to switch languages at runtime via the
+# ``tr()`` helper without having to re-evaluate the values on import.
 CONFIG_EXPLANATIONS: Dict[str, str] = {
     "AUTOLOCK_MINUTES": "Sperrdauer in Minuten bis der Tresor bei Inaktivität automatisch gesperrt wird.",
     "KDF_N": "scrypt: CPU-/Speicher-Kostenparameter N (höher = sicherer, aber langsamer)",
@@ -900,6 +907,43 @@ CONFIG_EXPLANATIONS: Dict[str, str] = {
     "FORCE_LANG": "Erzwingt die Sprache der Benutzeroberfläche ('de' für Deutsch, 'en' für Englisch). Leerer Wert = automatische Erkennung.",
 }
 
+# English translations for the configuration explanations.  See
+# CONFIG_EXPLANATIONS for the German originals.  These translations are
+# intentionally kept in a separate mapping so that they are not evaluated
+# during module import time (which might occur before CURRENT_LANG is set).
+CONFIG_EXPLANATIONS_EN: Dict[str, str] = {
+    "AUTOLOCK_MINUTES": "Time in minutes until the vault is automatically locked due to inactivity.",
+    "KDF_N": "scrypt: CPU/memory cost parameter N (higher = more secure but slower)",
+    "KDF_R": "scrypt: block size r (typically 8)",
+    "KDF_P": "scrypt: parallelization factor p (typically 1)",
+    "KDF_DKLEN": "Length of the derived key in bytes (96 for three 32-byte keys)",
+    "MIN_MASTER_PW_LEN": "Minimum length of the master password. A warning appears if the password is shorter.",
+    "BACKUP_KEEP": "Number of backup files to keep.",
+    "BACKUPS_ENABLED": "Creates a backup file before each save (True/False)",
+    "SAFE_CLI_DEFAULT": "Default value for the safe CLI mode (disable exports)",
+    "KDF_MODE": "KDF algorithm used: 'argon2' (default) or 'scrypt'",
+    "ARGON2_TIME": "Argon2: number of iterations (time_cost). Higher values increase security and the time required for key derivation.",
+    "ARGON2_MEMORY": "Argon2: memory requirement in KiB (memory_cost). Default is 262144 (256 MiB) to thwart brute-force attacks. Reduce if RAM is scarce.",
+    "ARGON2_PARALLELISM": "Argon2: number of parallel threads (parallelism)",
+    "AUDIT_ENABLED": "Enable audit logging (True/False)",
+    "AUDIT_LOG_FILE": "Path to the audit log file where actions are recorded.",
+    "CLI_COLOR_ENABLED": "Enable colored output in CLI (True/False). If true, color codes are used for background and text.",
+    "CLI_BG_COLOR": "ANSI color code for the CLI background. Default is '\033[40m' (black).",
+    "CLI_FG_COLOR": "ANSI color code for the CLI text color. Default is '\033[32m' (green).",
+    "GUI_BG_COLOR": "Hex code for the GUI background color (e.g. '#000000' for black).",
+    "GUI_FG_COLOR": "Hex code for the GUI text color (e.g. '#00FF00' for green).",
+    "GUI_BUTTON_COLOR": "Hex code for the background color of buttons in the GUI (e.g. '#444444' for grey).",
+    "ROTATION_WARNING_DAYS": "Threshold in days after which a key rotation is recommended when loading the vault (0 = disabled).",
+    "AUTO_ROTATION_DAYS": "Automatic key rotation after this number of days (0 = disabled). If the vault is older than this threshold, it is automatically re‑encrypted when unlocking.",
+    "MIN_VAULT_SIZE_KB": "Minimum size of the vault file in KiB. If the encrypted file is smaller than this value, random padding is added (0 = no padding).",
+    "SHOW_TELEGRAM_AD": "Enable the Telegram notice display (True/False). False hides the notice.",
+    "EXTRA_ENCRYPTION_LAYERS": "Additional encryption layers beyond the triple-layer encryption. 0 = no extra layer (triple-layer only), 1 = one layer (version 4), 2 = two layers (version 5) and so on. There is no fixed maximum – each additional layer increases file size and processing time; values >20 should only be used if you know what you are doing.",
+    "KEYFILE_PATH": "Path to an optional key file. The hash of the key file is used along with the master password as input to the KDF, making the vault unusable without the key file. Empty value = no key file.",
+    "DEVICE_BIND": "Enable binding the vault to the current device. If true, a device-specific hash is mixed into the KDF. Vaults cannot be opened without the original device.",
+    "REQUIRE_KEYFILE": "Force the use of the key file when KEYFILE_PATH is set (True/False). If the path is set but the file does not exist, the program aborts with an error.",
+    "FORCE_LANG": "Force the UI language ('de' for German, 'en' for English). Empty value = automatic detection.",
+}
+
 def _default_config() -> Dict[str, object]:
     """Erzeugt ein Dict aller konfigurierbaren Parameter mit aktuellen Werten."""
     return {k: globals()[k] for k in CONFIG_KEYS}
@@ -918,16 +962,31 @@ def write_config_with_comments(cfg_path: Path, cfg: Dict[str, object]) -> None:
     # erklären, dass jede Zeile mit '#' ein Kommentar ist und nicht Teil des
     # JSON-Objekts. Der Benutzer kann die Werte hinter den Doppelpunkten
     # verändern, um die Konfiguration anzupassen.
-    lines.append("# wlk_passwordsafe Konfiguration")
-    lines.append("# Jede Zeile, die mit '#' beginnt, ist ein Kommentar und wird beim Einlesen ignoriert.")
-    lines.append("# Bearbeite die Werte nach dem Doppelpunkt, um Parameter wie KDF, Auto-Lock oder Audit-Logging zu ändern.")
+    # Write a header for the configuration file.  Use tr() to provide
+    # English versions of the header comments when the interface language
+    # is set to English.  Comments always start with '#'; they will be
+    # ignored when loading the JSON.
+    lines.append(tr("# wlk_passwordsafe Konfiguration", "# wlk_passwordsafe configuration"))
+    lines.append(tr(
+        "# Jede Zeile, die mit '#' beginnt, ist ein Kommentar und wird beim Einlesen ignoriert.",
+        "# Each line beginning with '#' is a comment and will be ignored when reading."
+    ))
+    lines.append(tr(
+        "# Bearbeite die Werte nach dem Doppelpunkt, um Parameter wie KDF, Auto-Lock oder Audit-Logging zu ändern.",
+        "# Edit the values after the colon to change parameters such as KDF, auto-lock or audit logging."
+    ))
     lines.append("{")
     # Iteriere über alle zulässigen Konfig-Keys in der festgelegten Reihenfolge
     for i, key in enumerate(CONFIG_KEYS):
         # Füge den Kommentar hinzu, falls vorhanden
-        comment = CONFIG_EXPLANATIONS.get(key, "")
+        # Retrieve the German and English explanation for this key.  Use tr()
+        # to choose the appropriate language when writing the configuration
+        # file.  If no English translation exists, fall back to the German text.
+        comment_de = CONFIG_EXPLANATIONS.get(key, "")
+        comment_en = CONFIG_EXPLANATIONS_EN.get(key, comment_de)
+        comment = tr(comment_de, comment_en)
         if comment:
-            # Kommentarzeilen beginnen mit '#'
+            # Comment lines begin with '#'
             lines.append(f"    # {key}: {comment}")
         # JSON-Key und -Value serialisieren
         value = cfg.get(key, globals().get(key))
@@ -4829,28 +4888,35 @@ def launch_gui(path: Path) -> None:
             # Mapping von Konfigurationsnamen zu den zugehörigen Eingabefeldern
             entries = {}
             for idx, key in enumerate(CONFIG_KEYS):
+                # Determine the current value for this configuration key
                 val = current_values.get(key, "")
-                expl = CONFIG_EXPLANATIONS.get(key, "")
-                ttk.Label(scrollable_frame, text=key + ":").grid(row=2*idx, column=0, sticky="w", padx=4, pady=(6 if idx == 0 else 2, 0))
-                # Verwende einen klassischen tk.Entry mit hellgrauem Hintergrund für gute Lesbarkeit
+                # Look up the German and English explanations.  Fall back to the
+                # German text if a translation is missing.  We do not invoke
+                # tr() directly on import; instead we call it here so that
+                # CURRENT_LANG has been set via init_language().
+                expl_de = CONFIG_EXPLANATIONS.get(key, "")
+                expl_en = CONFIG_EXPLANATIONS_EN.get(key, expl_de)
+                expl = tr(expl_de, expl_en)
+                # Display the configuration key label
+                ttk.Label(scrollable_frame, text=key + ":").grid(row=2 * idx, column=0, sticky="w", padx=4, pady=(6 if idx == 0 else 2, 0))
+                # Use a classic tk.Entry with a light background for readability
                 ent = tk.Entry(scrollable_frame, width=40)
-                # Setze den Hintergrund anhand der globalen Eingabefarbe.  Die
-                # Schriftfarbe bleibt Standard, damit sie bei beliebigen
-                # GUI_FG_COLOR-Einstellungen lesbar bleibt.
+                # Configure the entry background to align with the global setting.
                 try:
                     ent.configure(background=ENTRY_BG_COLOR)
                 except Exception:
                     pass
                 ent.insert(0, str(val))
-                ent.grid(row=2*idx, column=1, sticky="w", padx=4, pady=(6 if idx == 0 else 2, 0))
+                ent.grid(row=2 * idx, column=1, sticky="w", padx=4, pady=(6 if idx == 0 else 2, 0))
                 entries[key] = ent
+                # Place the explanatory label on the next row if one exists
                 if expl:
                     ttk.Label(
                         scrollable_frame,
                         text=expl,
                         wraplength=500,
                         foreground="grey"
-                    ).grid(row=2*idx+1, column=0, columnspan=2, sticky="w", padx=4, pady=(0, 4))
+                    ).grid(row=2 * idx + 1, column=0, columnspan=2, sticky="w", padx=4, pady=(0, 4))
             # Schaltflächenleiste
             btn_frame = ttk.Frame(win)
             btn_frame.pack(fill="x", pady=8)
