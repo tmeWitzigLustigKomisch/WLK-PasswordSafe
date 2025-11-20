@@ -1,6 +1,10 @@
 # WLK PasswordSafe – Hochsicherer Passwort‑Manager
 
-*English version follows below.*
+<!-- Badges (optional, werden auf GitHub angezeigt) -->
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](#)
+
+*Deutsch weiter unten, English version follows below.*
 
 ## Überblick
 
@@ -38,6 +42,8 @@ Das Programm speichert Passwörter in einer verschlüsselten Tresor‑Datei (`.p
 - **Tabellen & Sortierung:** Info‑Felder können Sie als Tabellen strukturieren und nach Spalten sortieren. Die Eintragsliste lässt sich per Klick auf die Spaltenköpfe sortieren. Rasterlinien (horizontal und vertikal) verbessern die Übersicht.
 - **Datei‑ und Steganografie‑Werkzeuge:** Beliebige Dateien lassen sich mit einem Passwort verschlüsseln (`.enc`) oder in Cover‑Bildern verstecken (`.hid`). Ebenso können Sie versteckte Daten wieder extrahieren oder Bilder auf eine Mindestgröße aufblähen.
 - **Mehrsprachig:** WLK PasswordSafe erkennt die Systemsprache automatisch und unterstützt Deutsch und Englisch. Über den Parameter `FORCE_LANG` oder per Button lässt sich die Sprache jederzeit ändern.
+
+‑ **Auto‑Lock & Backups:** Der Tresor sperrt sich nach einer definierten Zeit der Inaktivität automatisch (Standard: 5 Minuten, konfigurierbar via `AUTOLOCK_MINUTES`). Beim Speichern werden verschlüsselte Sicherungskopien angelegt; standardmäßig werden zwei Backups aufbewahrt (`BACKUP_KEEP`), damit Sie im Notfall auf eine ältere Version zurückgreifen können.
 
 ## Installation
 
@@ -152,6 +158,26 @@ In der Konfiguration können Sie u. a. folgende Parameter anpassen:
 
 Konfigurationsdateien sind kommentiert und können mit einem beliebigen Texteditor bearbeitet werden. Kommentare beginnen mit `#` und werden beim Einlesen ignoriert.
 
+### Keyfile & Gerätebindung
+
+Um die Sicherheit des Tresors weiter zu erhöhen, können Sie ein externes Keyfile verwenden und/oder die Datei an ein bestimmtes Gerät binden. Fügen Sie dazu folgende Einstellungen in Ihrer Konfigurationsdatei hinzu:
+
+- **KEYFILE_PATH:** Legen Sie hier den Pfad zu Ihrer Schlüsseldatei fest. Der Inhalt dieses Keyfiles wird mit Ihrem Master‑Passwort in die Schlüsselableitung einbezogen. Achten Sie darauf, das Keyfile sicher aufzubewahren – ohne diese Datei kann der Tresor nicht geöffnet werden.
+- **DEVICE_BIND:** Setzen Sie diesen Wert auf `true`, um die Gerätebindung zu aktivieren. Dabei wird die jeweilige Geräte‑ID in die Schlüsselableitung gemischt (`/etc/machine-id` unter Linux, `MachineGuid` unter Windows). **Wichtig:** Eine Gerätebindung greift nur für neu erstellte Tresore. Bestehende Tresore müssen neu verschlüsselt werden, um diese Bindung wirksam zu machen.
+
+### Erweiterte Sicherheitsoptionen (optional)
+
+Für besonders sicherheitsbewusste Nutzer bietet das Skript zusätzliche Hardening‑Optionen. Diese können in der Konfiguration gesetzt werden:
+
+- **SAFE_CLI_DEFAULT:** Deaktiviert die Export‑Funktionen im CLI standardmäßig. Exporte sind dann nur nach expliziter Aktivierung erlaubt.
+- **SAFE_BLOCK_EXPORT:** Blockiert sämtliche Export‑Optionen (GUI und CLI). So wird verhindert, dass Klartext‑Passwörter auf der Festplatte landen.
+- **SAFE_BLOCK_CSV:** Deaktiviert den CSV‑Import, falls Sie keine Daten aus anderen Quellen übernehmen möchten.
+- **SAFE_BLOCK_STEGO:** Deaktiviert die Funktionen zum Verstecken/Extrahieren von Dateien in Bildern.
+- **SAFE_BLOCK_CLIPBOARD:** Verhindert das Kopieren von Passwörtern in die Zwischenablage.
+- **NO_PLAINTEXT_IN_GUI:** Zeigt Passwörter im GUI nie im Klartext an. Sie können sie nur in die Zwischenablage kopieren. Dies erhöht den Schutz vor Shoulder‑Surfing.
+
+Diese Optionen sind standardmäßig deaktiviert und richten sich an fortgeschrittene Anwender, die maximale Kontrolle über das Sicherheitsverhalten wünschen.
+
 ![Konfigurationseditor](images/gui_edit_config.png)
 
 ## Steganografie & Datei‑Verschlüsselung
@@ -168,7 +194,7 @@ Alle historischen Versionen des Skripts finden Sie im Ordner [`legacy`](legacy).
 
 ## Lizenz & Mitwirkung
 
-Dieses Projekt steht unter der **MIT‑Lizenz**. Sie dürfen den Quellcode frei verwenden, verändern und weitergeben, solange Sie den ursprünglichen Copyright‑Hinweis und die Lizenzbedingungen beibehalten. Die Lizenz findet sich im Header von `wlk_passwordsafe.py`.
+Dieses Projekt steht unter der **MIT‑Lizenz**. Sie dürfen den Quellcode frei verwenden, verändern und weitergeben, solange Sie den ursprünglichen Urheberrechts‑ und Lizenzhinweis beibehalten. Den vollständigen Lizenztext finden Sie in der Datei [`LICENSE`](LICENSE) sowie im Header von `wlk_passwordsafe.py`.
 
 Contributions sind willkommen. Öffnen Sie bei Fehlern, Verbesserungsvorschlägen oder neuen Features bitte ein Issue oder einen Pull‑Request. Bitte beachten Sie, dass das Projekt auf Sicherheitsbewusstsein ausgelegt ist und Änderungen sorgfältig geprüft werden.
 
@@ -179,6 +205,10 @@ Contributions sind willkommen. Öffnen Sie bei Fehlern, Verbesserungsvorschläge
 ## Haftungsausschluss
 
 Dieses Programm wird ohne jegliche Gewährleistung bereitgestellt. Die Nutzung erfolgt auf eigene Gefahr. Der Entwickler haftet nicht für Schäden, Datenverluste oder sonstige Probleme, die durch die Verwendung dieser Software entstehen. Bitte erstellen Sie stets Sicherungskopien Ihrer Daten, bevor Sie Verschlüsselungs‑ oder Steganografie‑Funktionen verwenden, und überprüfen Sie die Wiederherstellbarkeit Ihrer Backups.
+
+## Bekannte Probleme
+
+Aktuell sind keine kritischen Fehler bekannt. Sollten Sie dennoch auf Probleme, Inkompatibilitäten oder unbeabsichtigtes Verhalten stoßen, nutzen Sie bitte den Issue‑Tracker dieses Projekts, um diese zu melden. Transparente Fehlerdokumentation hilft allen Nutzern.
 
 ---
 
@@ -333,6 +363,26 @@ You can adjust parameters such as:
 
 Configuration files are self‑documenting; lines beginning with `#` are comments and ignored by the parser. You can edit the file with any text editor or through the built‑in editor in the GUI/CLI.
 
+#### Key file & device binding
+
+To further increase security you can use an external key file and/or bind the vault to a specific device. Add the following settings to your configuration:
+
+- **KEYFILE_PATH:** Specify the path to your key file. The contents of this file are mixed with your master password during key derivation. Keep the key file safe – without it you cannot open the vault.
+- **DEVICE_BIND:** Set this to `true` to enable device binding. The unique device ID (`/etc/machine-id` on Linux or `MachineGuid` on Windows) is mixed into the key derivation. **Note:** Device binding only applies to newly created vaults; existing vaults must be re‑encrypted for the binding to take effect.
+
+#### Advanced security options (optional)
+
+For users requiring maximum hardening the script includes additional options that can be set in the configuration:
+
+- **SAFE_CLI_DEFAULT:** Disables export functions in the CLI by default. Exports can only be enabled explicitly.
+- **SAFE_BLOCK_EXPORT:** Blocks all export functions (both GUI and CLI) so that no plaintext passwords are ever written to disk.
+- **SAFE_BLOCK_CSV:** Disables CSV import if you do not intend to import data from other sources.
+- **SAFE_BLOCK_STEGO:** Disables the steganography functions (hide/extract files in images).
+- **SAFE_BLOCK_CLIPBOARD:** Prevents copying passwords to the clipboard.
+- **NO_PLAINTEXT_IN_GUI:** Prevents displaying passwords in clear text in the GUI; you can only copy them to the clipboard. This mitigates shoulder‑surfing.
+
+These options are disabled by default and are aimed at advanced users who want fine‑grained control over the program’s behaviour.
+
 ![Configuration editor](images/gui_edit_config.png)
 
 ### Steganography & file encryption
@@ -349,7 +399,7 @@ All historic versions of the script are stored in the [`legacy`](legacy) directo
 
 ### Licence & contributing
 
-This project is released under the **MIT License**. You may use, modify and distribute the code freely as long as you retain the original copyright notice and licence terms. The full licence text is included in the header of `wlk_passwordsafe.py`.
+This project is released under the **MIT License**. You may use, modify and distribute the code freely as long as you retain the original copyright notice and licence terms. The full licence text is available in the [`LICENSE`](LICENSE) file as well as at the top of `wlk_passwordsafe.py`.
 
 Contributions are welcome. If you encounter bugs, have ideas for improvements or wish to add features, please open an issue or submit a pull request. Note that this project places a strong emphasis on security; all changes will be reviewed carefully.
 
@@ -360,3 +410,7 @@ Contributions are welcome. If you encounter bugs, have ideas for improvements or
 ### Disclaimer
 
 This program is provided **as is** without any warranty. Use it at your own risk. The developer is not liable for damages, data loss or other issues arising from the use of this software. Always keep backup copies of your data before using encryption or steganography features and verify that your backups are recoverable.
+
+### Known issues
+
+There are currently no known critical issues. If you encounter problems, incompatibilities or unintended behaviour, please use the issue tracker to report them. Clear documentation of issues helps all users.
