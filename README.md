@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](#)
 
-*Deutsch weiter unten, English version follows below.*
+*English version follows below.*
 
 ## Überblick
 
