@@ -200,7 +200,7 @@ Contributions sind willkommen. Öffnen Sie bei Fehlern, Verbesserungsvorschläge
 
 ## Credits & Kontakt
 
-`WLK PasswordSafe` wurde von **FleXcon** entwickelt. Besuchen Sie unseren Telegram‑Kanal [@WitzigLustigKomisch](https://t.me/WitzigLustigKomisch) für Neuigkeiten und Support. Dieses Projekt wurde ursprünglich auf Grundlage des alten `pwmanager.py` entwickelt und stetig erweitert.
+`WLK PasswordSafe` wurde von **FleXcon** entwickelt. Besuchen Sie unseren Telegram‑Kanal [@WitzigLustigKomisch](https://t.me/+lk64Nq48NndkZGZi) für Neuigkeiten und Support. Dieses Projekt wurde ursprünglich auf Grundlage des alten `pwmanager.py` entwickelt und stetig erweitert.
 
 ## Haftungsausschluss
 
@@ -293,13 +293,13 @@ Passwords are stored in an encrypted vault file (`.pwm`). A triple encryption ca
 
 When launched without a vault file, the **login window** appears:
 
-![Login window with no vault](images/gui_no_vault_screen.png)
+![Login window with no vault](images/gui_no_vault_screen_eng.png)
 
 Here you set a new master password or open an existing vault. Buttons allow you to select a different vault file, load or create a configuration file, switch languages, open the built‑in help or exit the program.
 
 After unlocking, you enter the **main view**:
 
-![Main window with empty vault](images/gui_empty_vault_screen.png)
+![Main window with empty vault](images/gui_empty_vault_screen_eng.png)
 
 The left pane lists your entries. The buttons on the right provide access to all functions: view, add, edit, delete, export/import, generate strong password, change master password, re‑encrypt (save) and file operations.
 
@@ -346,7 +346,7 @@ Additional options:
 - `--safe-cli` – disable export functions in CLI so no plaintext files can be written.
 - `--make-cover` and `--inflate-image` – create or enlarge images for steganography (see below).
 
-![CLI main menu](images/cli_main_menu.png)
+![CLI main menu](images/cli_main_menu_eng.png)
 
 ### Configuration
 
@@ -383,7 +383,7 @@ For users requiring maximum hardening the script includes additional options tha
 
 These options are disabled by default and are aimed at advanced users who want fine‑grained control over the program’s behaviour.
 
-![Configuration editor](images/gui_edit_config.png)
+![Configuration editor](images/gui_edit_config_eng.png)
 
 ### Steganography & file encryption
 
@@ -405,7 +405,7 @@ Contributions are welcome. If you encounter bugs, have ideas for improvements or
 
 ### Credits & contact
 
-`WLK PasswordSafe` is developed by **FleXcon**. For news and support, visit our Telegram channel [@WitzigLustigKomisch](https://t.me/WitzigLustigKomisch). The program is based on earlier versions of `pwmanager.py` and has been continuously improved.
+`WLK PasswordSafe` is developed by **FleXcon**. For news and support, visit our Telegram channel [@WitzigLustigKomisch](https://t.me/+lk64Nq48NndkZGZi). The program is based on earlier versions of `pwmanager.py` and has been continuously improved.
 
 ### Disclaimer
 
