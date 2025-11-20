@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-wlk_passwordsafe.py – Hochsicherer Passwort‑Manager als Einzeldatei. \ wlk_passwordsafe.py – Highly secure password manager as a single file.
+wlk_passwordsafe.py – Hochsicherer Passwort‑Manager als Einzeldatei. / wlk_passwordsafe.py – Highly secure password manager as a single file.
 
 ### Zusätzliche Funktionen / Additional features
 
