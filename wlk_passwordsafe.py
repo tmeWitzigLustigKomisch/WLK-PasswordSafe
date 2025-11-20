@@ -1221,7 +1221,7 @@ def apply_config(cfg: Dict[str, object]) -> None:
 # Programmversionsnummer. Diese sollte bei jeder Funktionsänderung oder
 # Fehlerbehebung erhöht werden. Sie dient zur Anzeige in der Hilfe und in
 # Audit‑Logs, hat aber keinen Einfluss auf das Dateiformat.
-PROGRAM_VERSION = "2.8.6"
+PROGRAM_VERSION = "2.8.7"
 
 # ====================================
 # SECTION B — Abhängigkeitsprüfung
@@ -4565,8 +4565,26 @@ def launch_gui(path: Path) -> None:
                 link_lbl.bind("<Button-1>", _open_link)
 
         def gui_create(self):
+            """
+            Create a new vault.  Regardless of any previously loaded or selected
+            vault file, always reset the target path to the default vault name
+            before creation.  This ensures that a newly created vault uses
+            ``DEFAULT_VAULT_NAME`` (typically ``vault.pwm``) instead of reusing
+            the filename of a previously opened vault.  The user will still
+            be prompted before overwriting an existing default file.
+            """
+            # Always reset to the default vault path for new vaults.  Using
+            # default_vault_path() ensures that the default name (e.g.,
+            # "vault.pwm") is used regardless of any previously loaded file.
+            try:
+                self.path = default_vault_path()
+            except Exception:
+                # Fallback: build path from DEFAULT_VAULT_NAME in current
+                # working directory if default_vault_path fails
+                self.path = Path(DEFAULT_VAULT_NAME)
+            # If a file with the default name already exists, ask for
+            # confirmation before overwriting it.
             if self.path.exists():
-                # Warnung bei vorhandener Datei mit übersetztem Titel und Text
                 if not messagebox.askyesno(
                     tr("Existiert", "Exists"),
                     tr("Datei existiert bereits — überschreiben?", "File already exists — overwrite?"),
