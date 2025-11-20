@@ -1,0 +1,42 @@
+# Versionshistorie
+
+Diese Liste führt die verfügbaren Altversionen des Passwortmanagers auf. Jede Datei befindet sich im Ordner `legacy` dieses Repositories.
+
+| Version | Datum (YYYY-MM-DD) | Datei | Beschreibung |
+|---|---|---|---|
+| erste version | 2025-10-17 | `WLK_pwmanager_ersteVersion.py` | Erste lauffähige Version des Passwortmanagers ohne zusätzliche Härtungen oder Steganografie‑Tools. |
+| unknown | 2025-10-18 | `WLK_pwmanager.py` | Refactoring und interne Verbesserungen: es wurden Audit‑Mechanismen, sichere Schreibfunktionen und Optionen zur Maskierung eingeführt; frühe Steganografie‑Konstanten wurden entfernt. |
+| 2.0.0. | 2025-10-18 | `WLK_pwmanager_v2.0.0.py` | Erste stabile Version der 2.x‑Reihe. Neue innere Funktionen (`_build_kdf_tlv`, `_rotate_audit_if_needed`, `_secure_write_text`) sorgen für auditierbare KDF‑Parameter, sichere Speicherung und Protokollrotation. Zahlreiche neue Konfigurationsvariablen (Audit‑Log‑Parameter, Clipboard‑Timeouts, Export‑Bestätigung) härten die Anwendung ab. |
+| 2.0.1_cover_tools | 2025-10-18 | `WLK_pwmanager_v2.0.1_cover_tools.py` | Fügt umfangreiche Steganografie‑Tools hinzu: neue Funktionen (`generate_noise_image`, `generate_noise_bmp`, `gui_create_cover_image_generic`, `gui_inflate_image_generic`) erzeugen zufällige Cover‑Bilder oder blähen vorhandene Bilder auf, damit versteckte Dateien in Bildern untergebracht werden können. |
+| 2.1.0. | 2025-10-18 | `WLK_pwmanager_v2.1.0.py` | Kleinere Bugfixes und interne Refactorings; die Benutzeroberfläche und der CLI‑Text wurden vereinheitlicht und vorbereitet für spätere Mehrsprachigkeit. |
+| 2.1.1. | 2025-10-20 | `WLK_pwmanager_v2.1.1.py` | Weitere Fehlerkorrekturen; Stabilisierung des neuen Codes aus 2.1.0 und kleinere Verbesserungen bei Dateieingaben. |
+| 2.1.2. | 2025-11-05 | `WLK_pwmanager_v2.1.2.py` | Einführung der Mehrsprachigkeit: neue Funktionen (`detect_system_language`, `init_language`, `tr`) erkennen die Systemsprache, erlauben Sprachumschaltung und Einführung der Option `FORCE_LANG`. |
+| 2.2.0. | 2025-11-05 | `WLK_pwmanager_v2.2.0.py` | Erweiterte Hilfe und Übersetzungsfähigkeit: die neue Funktion `get_help_text` filtert zweisprachige Docstrings in der Hilfe; das Hilfesystem wurde ausgebaut und bestehende Texte lokalisiert. |
+| 2.2.1. | 2025-11-05 | `WLK_pwmanager_v2.2.1.py` | Neue KDF‑Ableitungsfunktion `_derive_three_keys_with_params` ermöglicht die Schlüsselableitung mit expliziten Parametern (z. B. bei Argon2). Hinzu kommen die Konstanten `STEGO_MARKER` und `STEGO_LENGTH_LEN` zur eindeutigen Markierung und Längenbestimmung versteckter Daten in Cover‑Bildern. |
+| 2.3.0. | 2025-11-05 | `WLK_pwmanager_v2.3.0.py` | Aktiviert optionalen Telegram‑Werbehinweis (`SHOW_TELEGRAM_AD`) in der GUI. Diverse interne Optimierungen und Fehlerbehebungen verbessern Stabilität und Performance. |
+| 2.5.0. | 2025-11-05 | `WLK_pwmanager_v2.5.0.py` | Einführung der Variable `EXTRA_ENCRYPTION_LAYERS`: Anwender können nun beliebig viele zusätzliche XOR/HMAC‑Schichten konfigurieren. Die GUI erhielt erweiterte Tabellenfunktionen (Sortierung und Formatierung). |
+| 2.5.1. | 2025-11-05 | `WLK_pwmanager_v2.5.1.py` | Temporäre Auslagerung der Steganografie‑Werkzeuge: Funktionen zur Cover‑Bild‑Erzeugung und diverse Audit‑Variablen wurden entfernt, um Stabilitätsprobleme zu beheben. Zusätzlich kleinere Korrekturen an Export/Import‑Routinen. |
+| 2.5.2. | 2025-11-07 | `WLK_pwmanager_v2.5.2.py` | Rückkehr der Steganografie‑Tools: die in 2.5.1 entfernten Funktionen (`generate_noise_bmp`, `export_all_txt`, `hide_file_in_file` etc.) und Audit‑Variablen wurden wieder integriert. Behebt Fehler im Umgang mit Cover‑Dateien. |
+| 2.6.0. | 2025-11-13 | `WLK_pwmanager_v2.6.0.py` | Große Sicherheitsaktualisierung: neue Funktionen (`_load_keyfile_bytes`, `_load_device_id`, `_pre_kdf`, `_check_master_policy`, `clear_screen`, `wipe_bytes`, `secure_chmod_600`) ermöglichen Keyfile‑Nutzung, Gerätebindung, sichere Dateirechte und das sichere Löschen von Speicherdaten. Neue Variablen (`KEYFILE_PATH`, `DEVICE_BIND`, `MIN_MASTER_LEN`) erweitern die Konfiguration. |
+| 2.6.1. | 2025-11-13 | `WLK_pwmanager_v2.6.1.py` | Überarbeitetes CLI mit verbesserter Eingabebehandlung, Fehlerbehebungen in der GUI und angepasster Konfigurationslogik. Erweitert die Unterstützung für unterschiedliche Plattformen (Windows/Linux) und stabilisiert die neuen Sicherheitsfunktionen aus 2.6.0. |
+| 2.6.2. | 2025-11-13 | `WLK_pwmanager_v2.6.2.py` | Behebt kleinere Fehler im Steganografie‑Modul und verbessert die Stabilität beim Speichern großer Tresordateien. |
+| 2.6.3. | 2025-11-13 | `WLK_pwmanager_v2.6.3.py` | Optimiert die Auto‑Lock‑Logik und korrigiert seltene Fehler beim gleichzeitigen Zugriff im CLI‑Modus. |
+| 2.6.4. | 2025-11-13 | `WLK_pwmanager_v2.6.4.py` | Aktualisiert die Passwortgenerator‑Funktion und verbessert die Anzeige von Tabellen in der GUI. |
+| 2.6.5. | 2025-11-13 | `WLK_pwmanager_v2.6.5.py` | Bereinigt Code und behebt kleinere Speicherlecks; verbessert das Audit‑Logging und erhöht die Zuverlässigkeit beim Beenden des Programms. |
+| 2.6.6. | 2025-11-13 | `WLK_pwmanager_v2.6.6.py` | Weitere Bugfixes, darunter die Korrektur von Encoding‑Fehlern im CSV‑Export und eine stabilere Clipboard‑Löschroutine. |
+| 2.6.7. | 2025-11-14 | `WLK_pwmanager_v2.6.7.py` | Kleine Fehlerbehebungen in der Datei‑Verschlüsselungslogik und Performance‑Verbesserungen beim Öffnen großer Cover‑Bilder. |
+| 2.6.8. | 2025-11-14 | `WLK_pwmanager_v2.6.8.py` | Korrekturen beim Speichern und Wiederherstellen der Konfiguration sowie Anpassungen der CLI‑Menütexte. |
+| 2.6.9. | 2025-11-14 | `WLK_pwmanager_v2.6.9.py` | Führt die Variable `REQUIRE_KEYFILE` ein, mit der das Keyfile zur Pflicht wird; behebt Randfallfehler beim Passwortwechsel. |
+| 2.7.0. | 2025-11-14 | `WLK_pwmanager_v2.7.0.py` | Vorbereitung für Farbschemata: interne Umstrukturierungen im GUI‑Code; kleinere Fehlerkorrekturen und Stabilitätsverbesserungen. |
+| 2.7.1. | 2025-11-14 | `WLK_pwmanager_v2.7.1.py` | Bugfix‑Release, das UI‑Glitches behebt und die Stabilität des Export‑Assistenten verbessert. |
+| 2.7.2. | 2025-11-14 | `WLK_pwmanager_v2.7.2.py` | Kleinere Korrekturen am CLI‑Menü und verbesserte Error‑Messages. |
+| 2.7.3. | 2025-11-14 | `WLK_pwmanager_v2.7.3.py` | Diverse Bugfixes; verbessert die Synchronisierung zwischen GUI und CLI sowie die CSV‑Import‑Routine. |
+| 2.7.4. | 2025-11-14 | `WLK_pwmanager_v2.7.4.py` | Einführung der Variablen `ENTRY_BG_COLOR` und `TABLE_BG_COLOR` zur Einstellung von Hintergrundfarben in Tabellen; zusätzliche GUI‑Verfeinerungen. |
+| 2.7.5. | 2025-11-14 | `WLK_pwmanager_v2.7.5.py` | Ergänzt die Variable `SHOW_LIGHT_DARK_TOGGLE` und damit einen hell/dunkel‑Schalter für die GUI. |
+| 2.8.0. | 2025-11-14 | `WLK_pwmanager_v2.8.0.py` | Große UI‑Überarbeitung: neue Menü‑Strukturen (`MENU_DE`, `MENU_EN`, `OUTER_MENU_DE`, `OUTER_MENU_EN`) erlauben flexible Sprachen und farbige Menüs. Verbessert die Kryptografie‑Routinen und bereitet die Integration von Grid‑Linien vor. |
+| 2.8.1. | 2025-11-14 | `WLK_pwmanager_v2.8.1.py` | Stabilitätsupdate: optimiert den Startprozess und behebt kleinere UI‑Fehler. |
+| 2.8.2. | 2025-11-14 | `WLK_pwmanager_v2.8.2.py` | Entfernt veraltete Codeabschnitte, verbessert das Exception‑Handling im CLI und poliert die englischen Übersetzungen. |
+| 2.8.3. | 2025-11-14 | `WLK_pwmanager_v2.8.3.py` | Fügt die Funktion `add_grid_to_treeview` und die Variable `GRID_LINE_COLOR` hinzu, um horizontale Rasterlinien in der Tabellenansicht zu zeichnen. |
+| 2.8.4. | 2025-11-14 | `WLK_pwmanager_v2.8.4.py` | Ergänzt eine vertikale Rasterfunktion (`add_vertical_grid_to_treeview`), sodass Tabellen sowohl horizontale als auch vertikale Linien unterstützen. |
+| 2.8.5. | 2025-11-14 | `WLK_pwmanager_v2.8.5.py` | Finales Stabilitäts‑Release mit kleineren Korrekturen an der GUI und CLI; schließt Restarbeiten zur Codebereinigung ab. |
+| 2.8.6. | 2025-11-20 | `wlk_passwordsafe.py` | Umbenennung des Hauptskripts: Das Programm heißt jetzt **WLK PasswordSafe**. Infolgedessen wurden alle Vorkommen von `pwmanager` durch `wlk_passwordsafe` ersetzt: Docstrings, Hilfetexte, CLI‑Beispiele und Strings in der GUI. Die Standard‑Konfigurationsdatei heißt nun `wlk_passwordsafe_config.json` (statt `pwmanager_config.json`), und die GUI zeigt den Fenstertitel „WLK PasswordSafe“. Beim Start sucht die Autostart‑Routine jetzt nach einer `wlk_passwordsafeApp`‑Klasse. Zudem wurde die Programmversionsnummer auf 2.8.6 angehoben. Funktional bleibt das Verhalten unverändert. |
