@@ -1221,7 +1221,7 @@ def apply_config(cfg: Dict[str, object]) -> None:
 # Programmversionsnummer. Diese sollte bei jeder Funktionsänderung oder
 # Fehlerbehebung erhöht werden. Sie dient zur Anzeige in der Hilfe und in
 # Audit‑Logs, hat aber keinen Einfluss auf das Dateiformat.
-PROGRAM_VERSION = "2.8.7"
+PROGRAM_VERSION = "2.8.8"
 
 # ====================================
 # SECTION B — Abhängigkeitsprüfung
@@ -7121,6 +7121,11 @@ def launch_gui(path: Path) -> None:
                 out_path = self.hide_output_path.get().strip()
             except Exception:
                 out_path = str(self.hide_output_path).strip()
+
+            # Neu: Arbeits-Cover (kann temporär sein)
+            effective_cover_path = cover_path
+            temp_cover_for_hide: Optional[Path] = None
+
             # Validierungsprüfungen
             if not data_path:
                 messagebox.showerror(
@@ -7152,6 +7157,151 @@ def launch_gui(path: Path) -> None:
                     parent=self.root,
                 )
                 return
+            # Vor dem Abfragen des Passworts sicherstellen, dass die Cover-Datei groß genug ist.
+            # Wenn die Datei zu klein ist, den Benutzer fragen, wie sie vergrößert werden soll.
+            def ask_cover_enlarge_option(is_img: bool) -> str | None:
+                """Zeigt einen Dialog zur Auswahl der Vergrößerungsstrategie für die Cover-Datei.
+
+                Bei Bilddateien werden drei Schaltflächen angezeigt: „Hintergrundbild hinzufügen", „Bild skalieren"
+                sowie „Abbrechen". Für Nicht-Bild-Dateien wird gefragt, ob Zufallsdaten angehängt werden sollen
+                oder ob der Vorgang abgebrochen werden soll. Gibt einen der Strings "bg", "scale", "binary" zurück
+                oder None, wenn der Benutzer abbricht.
+                """
+                import tkinter as tk
+                from tkinter import simpledialog, messagebox
+                if is_img:
+                    dlg = tk.Toplevel(self.root)
+                    dlg.title(tr("Cover-Datei zu klein", "Cover file too small"))
+                    lbl = tk.Label(
+                        dlg,
+                        text=tr(
+                            "Die Cover-Datei ist zu klein. Bitte wählen Sie eine Methode, um sie zu vergrößern:",
+                            "The cover file is too small. Please choose a method to enlarge it:",
+                        ),
+                        wraplength=380,
+                    )
+                    lbl.pack(padx=10, pady=10)
+                    choice_var = tk.StringVar()
+                    def set_choice(val: str) -> None:
+                        choice_var.set(val)
+                        dlg.destroy()
+                    btn_bg = tk.Button(
+                        dlg,
+                        text=tr("Hintergrundbild hinzufügen", "Add random background"),
+                        command=lambda: set_choice("bg"),
+                        width=30,
+                    )
+                    btn_bg.pack(padx=5, pady=5)
+                    btn_scale = tk.Button(
+                        dlg,
+                        text=tr("Bild skalieren", "Scale image"),
+                        command=lambda: set_choice("scale"),
+                        width=30,
+                    )
+                    btn_scale.pack(padx=5, pady=5)
+                    btn_cancel = tk.Button(
+                        dlg,
+                        text=tr("Abbrechen", "Cancel"),
+                        command=lambda: set_choice("cancel"),
+                        width=30,
+                    )
+                    btn_cancel.pack(padx=5, pady=(5, 10))
+                    dlg.transient(self.root)
+                    dlg.grab_set()
+                    dlg.wait_window()
+                    result = choice_var.get()
+                    return result if result else None
+                else:
+                    ok = messagebox.askyesno(
+                        tr("Cover-Datei zu klein", "Cover file too small"),
+                        tr(
+                            "Die Cover-Datei ist zu klein. Möchten Sie zufällige Daten anhängen, um die Größe zu erhöhen?",
+                            "The cover file is too small. Would you like to append random data to increase its size?",
+                        ),
+                        parent=self.root,
+                    )
+                    return "binary" if ok else None
+
+            try:
+                cover_size_check = Path(cover_path).stat().st_size
+            except Exception:
+                cover_size_check = 0
+            min_size_bytes = 1 * 1024 * 1024
+            if cover_size_check < min_size_bytes:
+                # Unterscheiden, ob es sich um ein Bild handelt (für passende Optionen)
+                is_img_flag = False
+                try:
+                    from PIL import Image
+                    with Image.open(cover_path) as _:
+                        is_img_flag = True
+                except Exception:
+                    is_img_flag = False
+
+                # Benutzer nach einer Vergrößerungsstrategie fragen (Hintergrund, Skalierung, Zufallsdaten)
+                user_opt = ask_cover_enlarge_option(is_img_flag)
+                if not user_opt or user_opt == "cancel":
+                    return
+
+                try:
+                    import tempfile, os
+
+                    orig_cov_path = Path(cover_path)
+                    # sichere temporäre Datei im gleichen Verzeichnis wie die Cover-Datei
+                    fd, tmp_name = tempfile.mkstemp(
+                        prefix=orig_cov_path.stem + ".tmp_cover.",
+                        suffix=orig_cov_path.suffix,
+                        dir=str(orig_cov_path.parent),
+                    )
+                    os.close(fd)
+                    tmp_cov = Path(tmp_name)
+
+                    if user_opt == "bg":
+                        enlarge_image_to_min_size(orig_cov_path, tmp_cov, min_size_bytes, bg_strategy="noise")
+                    elif user_opt == "scale":
+                        scale_image_to_min_size(orig_cov_path, tmp_cov, min_size_bytes)
+                    elif user_opt == "binary":
+                        enlarge_binary_file(orig_cov_path, tmp_cov, min_size_bytes)
+
+                    # Neu: ab hier dieses temporäre Cover für das Verstecken verwenden
+                    temp_cover_for_hide = tmp_cov
+                    effective_cover_path = str(tmp_cov)
+
+                except Exception as e_expand:
+                    messagebox.showerror(
+                        tr("Fehler", "Error"),
+                        tr("Vergrößern der Cover-Datei fehlgeschlagen:", "Failed to enlarge the cover file:") + f"\n{e_expand}",
+                        parent=self.root,
+                    )
+                    # temporäre Datei aufräumen, falls angelegt
+                    try:
+                        if temp_cover_for_hide is not None and temp_cover_for_hide.exists():
+                            temp_cover_for_hide.unlink()
+                    except Exception:
+                        pass
+                    return
+
+                # Prüfen, ob die temporäre Cover-Datei nun groß genug ist
+                try:
+                    new_sz = Path(effective_cover_path).stat().st_size
+                except Exception:
+                    new_sz = 0
+                if new_sz < min_size_bytes:
+                    messagebox.showerror(
+                        tr("Fehler", "Error"),
+                        tr(
+                            "Die Cover-Datei konnte nicht ausreichend vergrößert werden.",
+                            "The cover file could not be sufficiently enlarged.",
+                        ),
+                        parent=self.root,
+                    )
+                    # temporäre Datei aufräumen
+                    try:
+                        if temp_cover_for_hide is not None and temp_cover_for_hide.exists():
+                            temp_cover_for_hide.unlink()
+                    except Exception:
+                        pass
+                    return
+
             # Passwort doppelt abfragen zur Fehlervermeidung
             pw1 = simpledialog.askstring(
                 tr("Passwort", "Password"),
@@ -7193,13 +7343,103 @@ def launch_gui(path: Path) -> None:
                     self.hide_output_path.set("")
                 except Exception:
                     pass
+                # Neu: temporäre Cover-Datei löschen
+                try:
+                    if temp_cover_for_hide is not None and temp_cover_for_hide.exists():
+                        temp_cover_for_hide.unlink()
+                except Exception:
+                    pass
             # Callback bei Fehler
             def on_hide_error(exc: Exception):
+                """
+                Callback invoked when hiding a file fails. If the error indicates that
+                the chosen cover file is too small, offer the user options to enlarge
+                the cover file (either by placing the image on a larger random
+                background or by scaling the image up) or to append random data to
+                arbitrary binary files. If the user chooses to enlarge the cover,
+                the cover file will be enlarged in a temporary copy and the hide operation is
+                retried. For other errors, a standard error dialog is shown.
+                """
+                # Zugriff auf die Variablen aus dem äußeren Scope, damit wir sie modifizieren können
+                nonlocal effective_cover_path, temp_cover_for_hide
+                # Fehlertext analysieren
+                err_msg = str(exc)
+                # Prüfen, ob der Fehler auf eine zu kleine Cover-Datei hinweist
+                if ("Cover-Datei zu klein" in err_msg) or ("cover file too small" in err_msg.lower()) or ("cover-datei too small" in err_msg.lower()):
+                    # Erneut prüfen, ob die Cover-Datei ein Bild ist
+                    img_flag = False
+                    try:
+                        from PIL import Image
+                        with Image.open(cover_path) as _:
+                            img_flag = True
+                    except Exception:
+                        img_flag = False
+                    # Benutzer nach Vergrößerungsoption fragen
+                    opt_ch = ask_cover_enlarge_option(img_flag)
+                    if not opt_ch or opt_ch == "cancel":
+                        return
+                    try:
+                        import tempfile, os
+                        orig_cov_path = Path(cover_path)
+
+                        fd, tmp_name = tempfile.mkstemp(
+                            prefix=orig_cov_path.stem + ".tmp_cover.",
+                            suffix=orig_cov_path.suffix,
+                            dir=str(orig_cov_path.parent),
+                        )
+                        os.close(fd)
+                        tmp_cov = Path(tmp_name)
+
+                        if opt_ch == "bg":
+                            enlarge_image_to_min_size(orig_cov_path, tmp_cov, 1 * 1024 * 1024, bg_strategy="noise")
+                        elif opt_ch == "scale":
+                            scale_image_to_min_size(orig_cov_path, tmp_cov, 1 * 1024 * 1024)
+                        elif opt_ch == "binary":
+                            enlarge_binary_file(orig_cov_path, tmp_cov, 1 * 1024 * 1024)
+
+                        temp_cover_for_hide = tmp_cov
+                        effective_cover_path = str(tmp_cov)
+
+                    except Exception as err2:
+                        messagebox.showerror(
+                            tr("Fehler", "Error"),
+                            tr("Vergrößern der Cover-Datei fehlgeschlagen:", "Failed to enlarge the cover file:") + f"\n{err2}",
+                            parent=self.root,
+                        )
+                        # temporäre Datei ggf. wieder löschen
+                        try:
+                            if temp_cover_for_hide is not None and temp_cover_for_hide.exists():
+                                temp_cover_for_hide.unlink()
+                        except Exception:
+                            pass
+                        return
+
+                    # Nach erfolgreicher Vergrößerung den Versteckvorgang erneut starten,
+                    # nun aber mit der temporären Cover-Datei
+                    self.run_with_progress(
+                        tr("Datei verstecken", "Hide file"),
+                        tr(
+                            "Datei wird versteckt. Bitte warten...",
+                            "File is being hidden. Please wait...",
+                        ),
+                        do_hide_work,
+                        args=(effective_cover_path, data_path, pw1, out_path),
+                        on_success=on_hide_success,
+                        on_error=on_hide_error,
+                    )
+                    return
+                # Für alle anderen Fehler Standard-Fehlerdialog anzeigen
                 messagebox.showerror(
                     tr("Fehler", "Error"),
                     tr("Verstecken fehlgeschlagen:", "Hiding failed:") + f"\n{exc}",
                     parent=self.root,
                 )
+                # temporäre Cover-Datei wegräumen, falls vorhanden
+                try:
+                    if temp_cover_for_hide is not None and temp_cover_for_hide.exists():
+                        temp_cover_for_hide.unlink()
+                except Exception:
+                    pass
             # Starte Fortschrittsdialog
             self.run_with_progress(
                 tr("Datei verstecken", "Hide file"),
@@ -7208,7 +7448,7 @@ def launch_gui(path: Path) -> None:
                     "File is being hidden. Please wait...",
                 ),
                 do_hide_work,
-                args=(cover_path, data_path, pw1, out_path),
+                args=(effective_cover_path, data_path, pw1, out_path),
                 on_success=on_hide_success,
                 on_error=on_hide_error,
             )
@@ -7927,6 +8167,254 @@ Datei‑Verschlüsselung und Verstecken:
       sicher.
 """)
 
+# ====================================
+def ensure_pillow():
+    try:
+        import PIL  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+def generate_noise_bmp(dest_path: Path, min_size_bytes: int = 1 * 1024 * 1024) -> Path:
+    """
+    Erzeugt ein unkomprimiertes 24-Bit-BMP mit Zufallspixeln (BGR),
+    das mindestens 'min_size_bytes' groß ist.
+    """
+    import math, secrets
+    dest_path = Path(dest_path)
+    header_size = 54  # 14 + 40
+    min_pixels = max(1, math.ceil((min_size_bytes - header_size) / 3))
+    side = max(64, math.ceil(math.sqrt(min_pixels)))
+
+    def compute_sizes(side_len):
+        row_raw = side_len * 3
+        pad = (4 - (row_raw % 4)) % 4
+        row = row_raw + pad
+        pixel_bytes = row * side_len
+        return row_raw, pad, pixel_bytes, header_size + pixel_bytes
+
+    row_raw, row_pad, pixel_bytes, file_size = compute_sizes(side)
+    while file_size < min_size_bytes:
+        side += 8
+        row_raw, row_pad, pixel_bytes, file_size = compute_sizes(side)
+
+    # Header
+    bfType = b'BM'
+    bfSize = file_size.to_bytes(4, 'little')
+    bfReserved = (0).to_bytes(4, 'little')
+    bfOffBits = (54).to_bytes(4, 'little')
+
+    biSize = (40).to_bytes(4, 'little')
+    biWidth = side.to_bytes(4, 'little', signed=True)
+    biHeight = side.to_bytes(4, 'little', signed=True)  # bottom-up
+    biPlanes = (1).to_bytes(2, 'little')
+    biBitCount = (24).to_bytes(2, 'little')
+    biCompression = (0).to_bytes(4, 'little')
+    biSizeImage = pixel_bytes.to_bytes(4, 'little')
+    biXPelsPerMeter = (2835).to_bytes(4, 'little')
+    biYPelsPerMeter = (2835).to_bytes(4, 'little')
+    biClrUsed = (0).to_bytes(4, 'little')
+    biClrImportant = (0).to_bytes(4, 'little')
+
+    header = (
+        bfType + bfSize + bfReserved + bfOffBits +
+        biSize + biWidth + biHeight + biPlanes + biBitCount + biCompression +
+        biSizeImage + biXPelsPerMeter + biYPelsPerMeter + biClrUsed + biClrImportant
+    )
+
+    rnd = secrets.SystemRandom()
+    pad_bytes = b'\x00' * row_pad
+    pixels = bytearray()
+    for _ in range(side):
+        row = bytearray(rnd.getrandbits(8) for _ in range(row_raw))
+        pixels.extend(row)
+        if row_pad:
+            pixels.extend(pad_bytes)
+
+    atomic_write(Path(dest_path), header + bytes(pixels))
+    return Path(dest_path)
+
+def _calc_canvas_for_min_size(format_upper: str, min_size_bytes: int, base_w: int, base_h: int):
+    """
+    Grobe Abschätzung der benötigten Seitenlänge, um mit random noise die Zieldateigröße zu erreichen.
+    Für PNG/JPEG nehmen wir an, dass Rauschen quasi unkomprimierbar ist.
+    """
+    import math
+    bytes_per_pixel = 3  # RGB
+    # Heuristik: Rohdaten ~ w*h*3; Container-Overhead additiv vernachlässigbar
+    target_pixels = max(1, math.ceil(min_size_bytes / bytes_per_pixel))
+    side = max(max(base_w, base_h), int(math.ceil(math.sqrt(target_pixels))))
+    return side, side
+
+def generate_noise_image(dest_path: Path, min_size_bytes: int = 1 * 1024 * 1024, fmt: Optional[str] = None) -> Path:
+    """
+    Erzeugt eine Zufallsbild-Datei in BMP/PNG/JPEG, die mindestens min_size_bytes groß ist.
+    Der Dateityp wird über 'fmt' oder anhand der Dateiendung bestimmt.
+    """
+    if not ensure_pillow():
+        raise RuntimeError("Pillow (PIL) nicht installiert. Bitte 'pip install Pillow' ausführen.")
+    from PIL import Image
+    import secrets, os
+
+    dest_path = Path(dest_path)
+    fmt_upper = (fmt or dest_path.suffix.lstrip(".")).upper()
+    if fmt_upper == "JPG":
+        fmt_upper = "JPEG"
+    if fmt_upper not in ("BMP", "PNG", "JPEG"):
+        raise ValueError(f"Nicht unterstütztes Zielformat: {fmt_upper}")
+
+    # Starte mit 512x512, wachse bis Größe passt
+    W = H = 512
+    while True:
+        raw = secrets.token_bytes(W * H * 3)
+        img = Image.frombytes("RGB", (W, H), raw)
+        if fmt_upper == "BMP":
+            img.save(dest_path, format="BMP")
+        elif fmt_upper == "PNG":
+            # compress_level=0 -> größer
+            img.save(dest_path, format="PNG", compress_level=0)
+        else:  # JPEG
+            img.save(dest_path, format="JPEG", quality=100, subsampling=0, optimize=False, progressive=False)
+        sz = os.path.getsize(dest_path)
+        if sz >= min_size_bytes:
+            break
+        # Vergrößern
+        W = int(W * 1.3)
+        H = int(H * 1.3)
+        # Sicherheitsgrenze
+        if W > 20000 or H > 20000:
+            break
+    return dest_path
+
+def enlarge_image_to_min_size(src_path: Path, dest_path: Path, min_size_bytes: int = 1 * 1024 * 1024,
+                              bg_strategy: str = "noise") -> Path:
+    """
+    Legt ein beliebiges Bild (JPG/JPEG/PNG) zentriert auf eine größere, zufällige Hintergrundfläche
+    und speichert in dasselbe Format wie 'dest_path' (Dateiendung maßgeblich).
+    Ziel: Dateigröße >= min_size_bytes.
+    """
+    if not ensure_pillow():
+        raise RuntimeError("Pillow (PIL) nicht installiert. Bitte 'pip install Pillow' ausführen.")
+    from PIL import Image
+    import os, math, secrets
+
+    src_path = Path(src_path)
+    dest_path = Path(dest_path)
+    if not src_path.exists():
+        raise FileNotFoundError(f"Quelle nicht gefunden: {src_path}")
+
+    out_fmt = dest_path.suffix.lstrip(".").upper() or "JPEG"
+    if out_fmt == "JPG":
+        out_fmt = "JPEG"
+    if out_fmt not in ("PNG", "JPEG", "BMP"):
+        raise ValueError(f"Nicht unterstütztes Ausgabeformat: {out_fmt}")
+
+    with Image.open(src_path) as im0:
+        im = im0.convert("RGB")
+        w, h = im.size
+
+    def make_bg(W, H):
+        if bg_strategy == "solid":
+            color = (secrets.randbelow(256), secrets.randbelow(256), secrets.randbelow(256))
+            return Image.new("RGB", (W, H), color)
+        else:
+            raw = secrets.token_bytes(W * H * 3)
+            return Image.frombytes("RGB", (W, H), raw)
+
+    scale = 1.6
+    while True:
+        W = max(w, int(math.ceil(w * scale)))
+        H = max(h, int(math.ceil(h * scale)))
+        bg = make_bg(W, H)
+        x = (W - w) // 2
+        y = (H - h) // 2
+        bg.paste(im, (x, y))
+        if out_fmt == "PNG":
+            bg.save(dest_path, format="PNG", compress_level=0)
+        elif out_fmt == "BMP":
+            bg.save(dest_path, format="BMP")
+        else:
+            bg.save(dest_path, format="JPEG", quality=100, subsampling=0, optimize=False, progressive=False)
+        if os.path.getsize(dest_path) >= min_size_bytes:
+            break
+        scale *= 1.35
+        if max(W, H) > 20000:
+            break
+    return dest_path
+
+def scale_image_to_min_size(src_path: Path, dest_path: Path, min_size_bytes: int = 1 * 1024 * 1024) -> Path:
+    """
+    Enlarges an existing image by scaling it proportionally until the output file
+    meets or exceeds ``min_size_bytes``. The output format is inferred from
+    ``dest_path``'s suffix (PNG/JPEG/BMP) and high quality resampling is used
+    to preserve image clarity. If Pillow is not installed, a RuntimeError is raised.
+    """
+    if not ensure_pillow():
+        raise RuntimeError("Pillow (PIL) nicht installiert. Bitte 'pip install Pillow' ausführen.")
+    from PIL import Image
+    import os, math
+    src_path = Path(src_path)
+    dest_path = Path(dest_path)
+    if not src_path.exists():
+        raise FileNotFoundError(f"Quelle nicht gefunden: {src_path}")
+    out_fmt = dest_path.suffix.lstrip(".").upper() or "JPEG"
+    if out_fmt == "JPG":
+        out_fmt = "JPEG"
+    if out_fmt not in ("PNG", "JPEG", "BMP"):
+        raise ValueError(f"Nicht unterstütztes Ausgabeformat: {out_fmt}")
+    with Image.open(src_path) as im0:
+        im = im0.convert("RGB")
+        w, h = im.size
+    scale = 1.6
+    while True:
+        # Calculate new dimensions preserving aspect ratio
+        W = max(1, int(math.ceil(w * scale)))
+        H = max(1, int(math.ceil(h * scale)))
+        # Use LANCZOS for high quality scaling; fall back to Image.LANCZOS if Resampling is unavailable
+        try:
+            resample_filter = Image.LANCZOS
+        except AttributeError:
+            # Pillow >= 10 moved filters to Image.Resampling
+            resample_filter = Image.Resampling.LANCZOS
+        enlarged = im.resize((W, H), resample_filter)
+        if out_fmt == "PNG":
+            enlarged.save(dest_path, format="PNG", compress_level=0)
+        elif out_fmt == "BMP":
+            enlarged.save(dest_path, format="BMP")
+        else:
+            enlarged.save(dest_path, format="JPEG", quality=100, subsampling=0, optimize=False, progressive=False)
+        if os.path.getsize(dest_path) >= min_size_bytes:
+            break
+        scale *= 1.35
+        if max(W, H) > 20000:
+            break
+    return dest_path
+
+def enlarge_binary_file(src_path: Path, dest_path: Path, min_size_bytes: int = 1 * 1024 * 1024) -> Path:
+    """
+    Appends random data to an arbitrary binary file until it reaches at least
+    ``min_size_bytes`` bytes. The original content is preserved at the beginning
+    of the output file. This function can be used for non-image cover files
+    that are too small to embed hidden data.
+    """
+    import os, secrets
+    src_path = Path(src_path)
+    dest_path = Path(dest_path)
+    data = src_path.read_bytes()
+    current_size = len(data)
+    if current_size >= min_size_bytes:
+        # Nothing to do
+        if dest_path != src_path:
+            atomic_write(dest_path, data)
+        return dest_path
+    # Determine how many random bytes to append
+    extra_len = min_size_bytes - current_size
+    extra_bytes = secrets.token_bytes(extra_len)
+    # Write combined data to destination path
+    atomic_write(dest_path, data + extra_bytes)
+    return dest_path
+
+
 def main(argv):
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--file", "-f", default=DEFAULT_VAULT_NAME)
@@ -8351,180 +8839,6 @@ except Exception:
 
 
 
-# ====================================
-def ensure_pillow():
-    try:
-        import PIL  # noqa: F401
-        return True
-    except Exception:
-        return False
-
-def generate_noise_bmp(dest_path: Path, min_size_bytes: int = 1 * 1024 * 1024) -> Path:
-    """
-    Erzeugt ein unkomprimiertes 24-Bit-BMP mit Zufallspixeln (BGR),
-    das mindestens 'min_size_bytes' groß ist.
-    """
-    import math, secrets
-    dest_path = Path(dest_path)
-    header_size = 54  # 14 + 40
-    min_pixels = max(1, math.ceil((min_size_bytes - header_size) / 3))
-    side = max(64, math.ceil(math.sqrt(min_pixels)))
-
-    def compute_sizes(side_len):
-        row_raw = side_len * 3
-        pad = (4 - (row_raw % 4)) % 4
-        row = row_raw + pad
-        pixel_bytes = row * side_len
-        return row_raw, pad, pixel_bytes, header_size + pixel_bytes
-
-    row_raw, row_pad, pixel_bytes, file_size = compute_sizes(side)
-    while file_size < min_size_bytes:
-        side += 8
-        row_raw, row_pad, pixel_bytes, file_size = compute_sizes(side)
-
-    # Header
-    bfType = b'BM'
-    bfSize = file_size.to_bytes(4, 'little')
-    bfReserved = (0).to_bytes(4, 'little')
-    bfOffBits = (54).to_bytes(4, 'little')
-
-    biSize = (40).to_bytes(4, 'little')
-    biWidth = side.to_bytes(4, 'little', signed=True)
-    biHeight = side.to_bytes(4, 'little', signed=True)  # bottom-up
-    biPlanes = (1).to_bytes(2, 'little')
-    biBitCount = (24).to_bytes(2, 'little')
-    biCompression = (0).to_bytes(4, 'little')
-    biSizeImage = pixel_bytes.to_bytes(4, 'little')
-    biXPelsPerMeter = (2835).to_bytes(4, 'little')
-    biYPelsPerMeter = (2835).to_bytes(4, 'little')
-    biClrUsed = (0).to_bytes(4, 'little')
-    biClrImportant = (0).to_bytes(4, 'little')
-
-    header = (
-        bfType + bfSize + bfReserved + bfOffBits +
-        biSize + biWidth + biHeight + biPlanes + biBitCount + biCompression +
-        biSizeImage + biXPelsPerMeter + biYPelsPerMeter + biClrUsed + biClrImportant
-    )
-
-    rnd = secrets.SystemRandom()
-    pad_bytes = b'\x00' * row_pad
-    pixels = bytearray()
-    for _ in range(side):
-        row = bytearray(rnd.getrandbits(8) for _ in range(row_raw))
-        pixels.extend(row)
-        if row_pad:
-            pixels.extend(pad_bytes)
-
-    atomic_write(Path(dest_path), header + bytes(pixels))
-    return Path(dest_path)
-
-def _calc_canvas_for_min_size(format_upper: str, min_size_bytes: int, base_w: int, base_h: int):
-    """
-    Grobe Abschätzung der benötigten Seitenlänge, um mit random noise die Zieldateigröße zu erreichen.
-    Für PNG/JPEG nehmen wir an, dass Rauschen quasi unkomprimierbar ist.
-    """
-    import math
-    bytes_per_pixel = 3  # RGB
-    # Heuristik: Rohdaten ~ w*h*3; Container-Overhead additiv vernachlässigbar
-    target_pixels = max(1, math.ceil(min_size_bytes / bytes_per_pixel))
-    side = max(max(base_w, base_h), int(math.ceil(math.sqrt(target_pixels))))
-    return side, side
-
-def generate_noise_image(dest_path: Path, min_size_bytes: int = 1 * 1024 * 1024, fmt: Optional[str] = None) -> Path:
-    """
-    Erzeugt eine Zufallsbild-Datei in BMP/PNG/JPEG, die mindestens min_size_bytes groß ist.
-    Der Dateityp wird über 'fmt' oder anhand der Dateiendung bestimmt.
-    """
-    if not ensure_pillow():
-        raise RuntimeError("Pillow (PIL) nicht installiert. Bitte 'pip install Pillow' ausführen.")
-    from PIL import Image
-    import secrets, os
-
-    dest_path = Path(dest_path)
-    fmt_upper = (fmt or dest_path.suffix.lstrip(".")).upper()
-    if fmt_upper == "JPG":
-        fmt_upper = "JPEG"
-    if fmt_upper not in ("BMP", "PNG", "JPEG"):
-        raise ValueError(f"Nicht unterstütztes Zielformat: {fmt_upper}")
-
-    # Starte mit 512x512, wachse bis Größe passt
-    W = H = 512
-    while True:
-        raw = secrets.token_bytes(W * H * 3)
-        img = Image.frombytes("RGB", (W, H), raw)
-        if fmt_upper == "BMP":
-            img.save(dest_path, format="BMP")
-        elif fmt_upper == "PNG":
-            # compress_level=0 -> größer
-            img.save(dest_path, format="PNG", compress_level=0)
-        else:  # JPEG
-            img.save(dest_path, format="JPEG", quality=100, subsampling=0, optimize=False, progressive=False)
-        sz = os.path.getsize(dest_path)
-        if sz >= min_size_bytes:
-            break
-        # Vergrößern
-        W = int(W * 1.3)
-        H = int(H * 1.3)
-        # Sicherheitsgrenze
-        if W > 20000 or H > 20000:
-            break
-    return dest_path
-
-def enlarge_image_to_min_size(src_path: Path, dest_path: Path, min_size_bytes: int = 1 * 1024 * 1024,
-                              bg_strategy: str = "noise") -> Path:
-    """
-    Legt ein beliebiges Bild (JPG/JPEG/PNG) zentriert auf eine größere, zufällige Hintergrundfläche
-    und speichert in dasselbe Format wie 'dest_path' (Dateiendung maßgeblich).
-    Ziel: Dateigröße >= min_size_bytes.
-    """
-    if not ensure_pillow():
-        raise RuntimeError("Pillow (PIL) nicht installiert. Bitte 'pip install Pillow' ausführen.")
-    from PIL import Image
-    import os, math, secrets
-
-    src_path = Path(src_path)
-    dest_path = Path(dest_path)
-    if not src_path.exists():
-        raise FileNotFoundError(f"Quelle nicht gefunden: {src_path}")
-
-    out_fmt = dest_path.suffix.lstrip(".").upper() or "JPEG"
-    if out_fmt == "JPG":
-        out_fmt = "JPEG"
-    if out_fmt not in ("PNG", "JPEG", "BMP"):
-        raise ValueError(f"Nicht unterstütztes Ausgabeformat: {out_fmt}")
-
-    with Image.open(src_path) as im0:
-        im = im0.convert("RGB")
-        w, h = im.size
-
-    def make_bg(W, H):
-        if bg_strategy == "solid":
-            color = (secrets.randbelow(256), secrets.randbelow(256), secrets.randbelow(256))
-            return Image.new("RGB", (W, H), color)
-        else:
-            raw = secrets.token_bytes(W * H * 3)
-            return Image.frombytes("RGB", (W, H), raw)
-
-    scale = 1.6
-    while True:
-        W = max(w, int(math.ceil(w * scale)))
-        H = max(h, int(math.ceil(h * scale)))
-        bg = make_bg(W, H)
-        x = (W - w) // 2
-        y = (H - h) // 2
-        bg.paste(im, (x, y))
-        if out_fmt == "PNG":
-            bg.save(dest_path, format="PNG", compress_level=0)
-        elif out_fmt == "BMP":
-            bg.save(dest_path, format="BMP")
-        else:
-            bg.save(dest_path, format="JPEG", quality=100, subsampling=0, optimize=False, progressive=False)
-        if os.path.getsize(dest_path) >= min_size_bytes:
-            break
-        scale *= 1.35
-        if max(W, H) > 20000:
-            break
-    return dest_path
 
 # ---- GUI-Helfer (optional einsetzbar von bestehenden GUIs) ----
 def gui_create_cover_image_generic():
