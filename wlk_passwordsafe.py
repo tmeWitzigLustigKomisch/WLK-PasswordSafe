@@ -275,6 +275,36 @@ def fmt_de(ts: float) -> str:
     return time.strftime("%d.%m.%Y %H:%M:%S", time.localtime(ts))
 # -------------------------------------------
 
+# Helferfunktion zum Ausführen langlaufender Aufgaben in einem Hintergrund‑Thread.
+# Die Funktion führt ``target_func`` asynchron aus und ruft nach Abschluss entweder
+# ``on_success`` (bei Erfolg) oder ``on_error`` (bei einer Exception) mit dem
+# Ergebnis bzw. der Exception auf. Damit blockiert die GUI nicht, wenn z.B. eine
+# versteckte Datei extrahiert wird.
+def run_in_thread(target_func: Callable,
+                  on_success: Optional[Callable] = None,
+                  on_error: Optional[Callable] = None,
+                  args: Tuple = (),
+                  kwargs: Optional[Dict] = None) -> None:
+    """Führt ``target_func`` asynchron in einem Thread aus.
+
+    :param target_func: Die auszuführende Funktion
+    :param on_success: Callback, das mit dem Rückgabewert von ``target_func`` aufgerufen wird
+    :param on_error: Callback, das mit der ausgelösten Exception aufgerufen wird
+    :param args: Positionsargumente für ``target_func``
+    :param kwargs: Keyword‑Argumente für ``target_func``
+    """
+    def _worker() -> None:
+        try:
+            result = target_func(*args, **(kwargs or {}))
+            if on_success:
+                on_success(result)
+        except Exception as exc:
+            if on_error:
+                on_error(exc)
+    # ``daemon=True`` stellt sicher, dass der Thread das Programm nicht blockiert,
+    # falls beim Beenden noch Hintergrundthreads laufen.
+    threading.Thread(target=_worker, daemon=True).start()
+
 
 # ====================================
 # SECTION A — Konfiguration (oben editierbar)
@@ -630,8 +660,10 @@ AUDIT_REDACT = True
 AUDIT_MAX_BYTES = 2 * 1024 * 1024  # 2 MiB
 AUDIT_BACKUPS_TO_KEEP = 3          # Rotationskopien
 
-# Strenger "Safe Mode": export/clipboard/stego in CLI und GUI sperren (kannst du manuell im Code enforce'n)
-HARDENED_SAFE_MODE = True
+# Strenger "Safe Mode": export/clipboard/stego in CLI und GUI sperren.
+# Standardmäßig deaktiviert, damit Steganographie-Funktionen genutzt werden können. Dieser Wert
+# kann über eine Konfigurationsdatei oder über Umgebungsvariablen überschrieben werden.
+HARDENED_SAFE_MODE = False
 
 
 # Werbehinweis und Programm-Icon.
@@ -3442,8 +3474,55 @@ def cli_outer_loop(default_path: Path, safe_mode: bool = SAFE_CLI_DEFAULT) -> No
             cli_decrypt_file()
         elif choice == "12":
             cli_hide_file()
-        elif choice == "13":
-            cli_extract_hidden_file()
+#        elif choice == "13":
+#            cli_extract_hidden_file()
+        elif choice == "13":  # Versteckte Datei extrahieren
+            if HARDENED_SAFE_MODE:
+                print(tr("Steganographie ist im Safe-Mode deaktiviert.",
+                         "Steganography is disabled in safe mode."))
+                continue
+
+            stego_f = input(tr(
+                "Pfad zur Datei mit verstecktem Inhalt (.hid/Bild): ",
+                "Path to file with hidden content (.hid/image): ",
+            )).strip()
+            if not stego_f:
+                continue
+            if not os.path.exists(stego_f):
+                print(tr("Datei existiert nicht.", "File does not exist."))
+                continue
+
+            pw = prompt_hidden_password()
+            if pw is None:
+                # Benutzer hat abgebrochen
+                continue
+
+            try:
+                orig_name, payload = decrypt_hidden_payload(Path(stego_f), pw)
+            except Exception as e:
+                print(tr("Fehler beim Entschlüsseln/Extrahieren:",
+                         "Error while decrypting/extracting:") + f" {e}")
+                continue
+
+            dest_dir = Path(stego_f).parent
+            base = Path(orig_name)
+            candidate = dest_dir / base
+            counter = 1
+            while candidate.exists():
+                candidate = dest_dir / f"{base.stem}_{counter}{base.suffix}"
+                counter += 1
+
+            try:
+                backup_before_overwrite(candidate)
+                atomic_write(candidate, payload)
+            except Exception as e:
+                print(tr("Fehler beim Schreiben der Zieldatei:",
+                         "Error writing output file:") + f" {e}")
+                continue
+
+            print(tr("Versteckte Datei extrahiert nach:",
+                     "Hidden file extracted to:") + f" {candidate}")
+            write_audit("cli_extract_hidden", f"{stego_f}->{candidate}")
         elif choice == "c":
             # Konfigurationsdatei erstellen (gleiche Logik wie im Hauptmenü)
             print(tr("Konfig-Datei erstellen", "Create config file"))
@@ -3980,15 +4059,16 @@ def launch_gui(path: Path) -> None:
                 self.hide_cover_path = tk.StringVar(value="")
                 self.hide_output_path = tk.StringVar(value="")
                 self.extract_stego_path = tk.StringVar(value="")
-                # Zielpfad für die extrahierte Datei
-                self.extract_output_path = tk.StringVar(value="")
+                # StringVar für das Passwort der Extraktion
+                self.extract_password = tk.StringVar(value="")
             except Exception:
                 # Falls Tk nicht verfügbar ist, initialisiere Strings normal
                 self.hide_data_path = ""
                 self.hide_cover_path = ""
                 self.hide_output_path = ""
                 self.extract_stego_path = ""
-                self.extract_output_path = ""
+                # Passwort für die Extraktion (als einfacher String, falls Tk nicht verfügbar ist)
+                self.extract_password = ""
             # Baue nun die Login-UI auf. Die vorher definierten Variablen werden von
             # build_login_ui verwendet.
             self.build_login_ui()
@@ -4524,18 +4604,50 @@ def launch_gui(path: Path) -> None:
             ttk.Button(hide_ops, text=tr("Verstecken", "Hide"), command=self.gui_do_hide).grid(row=3, column=0, sticky="w", pady=(4, 6))
             ttk.Label(steg_frame,
                       text=tr(
-                          "Verstecktes extrahieren: Wählen Sie die .hid-Datei mit verstecktem Inhalt und anschließend einen\nAusgabepfad. Der versteckte Inhalt wird entschlüsselt und als separate Datei gespeichert.",
-                          "Extract hidden: Select the .hid file with hidden content and then an output path.\nThe hidden content is decrypted and saved as a separate file."
+                          "Verstecktes extrahieren: Wählen Sie die .hid-Datei mit verstecktem Inhalt und geben Sie das Passwort ein. Der versteckte Inhalt wird entschlüsselt und als separate Datei im selben Ordner gespeichert.",
+                          "Extract hidden: Select the .hid file with hidden content and enter the password.\nThe hidden content is decrypted and saved as a separate file in the same folder."
                       ),
                       wraplength=700,
                       justify="left").pack(anchor="w", pady=(0, 4))
+
             extract_ops = ttk.Frame(steg_frame)
             extract_ops.pack(fill="x")
-            ttk.Button(extract_ops, text=tr(".hid-Datei", ".hid file"), command=self.gui_select_extract_stego).grid(row=0, column=0, sticky="w", pady=2)
-            ttk.Label(extract_ops, textvariable=self.extract_stego_path, wraplength=500).grid(row=0, column=1, sticky="w", padx=6)
-            ttk.Button(extract_ops, text=tr("Ziel-Datei", "Target file"), command=self.gui_select_extract_output).grid(row=1, column=0, sticky="w", pady=2)
-            ttk.Label(extract_ops, textvariable=self.extract_output_path, wraplength=500).grid(row=1, column=1, sticky="w", padx=6)
-            ttk.Button(extract_ops, text=tr("Extrahieren", "Extract"), command=self.gui_do_extract).grid(row=2, column=0, sticky="w", pady=(4, 6))
+            
+            ttk.Button(
+                extract_ops,
+                text=tr(".hid-Datei", ".hid file"),
+                command=self.gui_select_extract_stego
+            ).grid(row=0, column=0, sticky="w", pady=2)
+            
+            ttk.Label(
+                extract_ops,
+                textvariable=self.extract_stego_path,
+                wraplength=500
+            ).grid(row=0, column=1, sticky="w", padx=6)
+
+            # Passwort-Eingabefeld für die Extraktion
+            ttk.Label(
+                extract_ops,
+                text=tr("Passwort", "Password")
+            ).grid(row=1, column=0, sticky="w", pady=2)
+            
+            pw_entry = ttk.Entry(
+                extract_ops,
+                textvariable=self.extract_password,
+                show="*"
+            )
+            pw_entry.grid(row=1, column=1, sticky="w", padx=6)
+
+            # HIER: Enter-Taste an das Passwortfeld binden
+            pw_entry.bind("<Return>", lambda event: self.gui_do_extract())
+            
+            # Button wie gehabt
+            ttk.Button(
+                extract_ops,
+                text=tr("Extrahieren", "Extract"),
+                command=self.gui_do_extract
+            ).grid(row=2, column=0, sticky="w", pady=(4, 6))
+
             # Werbebereich unten: zwei Zeilen, zweiter Link ist klickbar
             # Telegram‑Hinweis am unteren Rand des Login‑Fensters.  Die Anzeige
             # erfolgt nur, wenn SHOW_TELEGRAM_AD aktiv ist.  Der Link öffnet
@@ -6987,7 +7099,14 @@ def launch_gui(path: Path) -> None:
                 )
 
         def gui_extract_hidden_file(self):
-            """Extrahiert eine versteckte Datei aus einer Datei."""
+            """Extrahiert eine versteckte Datei aus einer Datei.
+                
+            Der Benutzer wählt nur noch die .hid-Datei und gibt das Passwort ein.
+            Der ursprüngliche Dateiname wird aus der Nutzlast gelesen und die
+            Datei automatisch im gleichen Verzeichnis wie die .hid-Datei
+            gespeichert. Existiert dort bereits eine Datei mit diesem Namen,
+            wird ein Zähler _1, _2, ... angehängt.
+            """
             self.touch()
             stego_f = filedialog.askopenfilename(
                 parent=self.root,
@@ -7007,7 +7126,7 @@ def launch_gui(path: Path) -> None:
             )
             if not pw:
                 return
-            # Versuche, Nutzlast zu entschlüsseln und den ursprünglichen Dateinamen zu ermitteln
+            # Nutzlast entschlüsseln und ursprünglichen Dateinamen bekommen
             try:
                 orig_name, payload = decrypt_hidden_payload(Path(stego_f), pw)
             except Exception as e:
@@ -7016,37 +7135,37 @@ def launch_gui(path: Path) -> None:
                     tr("Extraktion fehlgeschlagen:", "Extraction failed:") + f"\n{e}",
                 )
                 return
-            # Zeige erkannte Datei/Endung an
-            messagebox.showinfo(
-                tr("Versteckte Datei", "Hidden file"),
-                tr("Es wurde folgende Datei erkannt:", "The following file was detected:") + f"\n{orig_name}",
-            )
-            # Vorschlag für Ausgabedatei: ursprünglicher Name im gleichen Verzeichnis
-            suggested = Path(stego_f).with_name(orig_name)
-            out_f = filedialog.asksaveasfilename(
-                parent=self.root,
-                title=tr(
-                    "Speicherort für extrahierte Datei wählen",
-                    "Select destination for extracted file",
-                ),
-                initialfile=suggested.name,
-                defaultextension=Path(orig_name).suffix or ".extrahiert",
-                filetypes=[(tr("Alle Dateien", "All files"), "*.*")],
-            )
-            if not out_f:
-                return
+        
+            # Zielpfad automatisch bestimmen
+            stego_path = Path(stego_f)
+            name_path = Path(orig_name)
+            base = name_path.stem or "extracted"
+            suffix = name_path.suffix
+            parent = stego_path.parent
+        
+            candidate = parent / (base + suffix)
+            counter = 1
+            while candidate.exists():
+                if suffix:
+                    candidate = parent / f"{base}_{counter}{suffix}"
+                else:
+                    candidate = parent / f"{base}_{counter}"
+                counter += 1
+
+            # Schreiben
             try:
-                atomic_write(Path(out_f), payload)
-                write_audit("extract_file", f"{stego_f}->{out_f}")
+                atomic_write(candidate, payload)
+                write_audit("extract_file", f"{stego_f}->{candidate}")
                 messagebox.showinfo(
                     tr("Erfolg", "Success"),
-                    tr("Datei extrahiert:", "File extracted:") + f"\n{out_f}",
+                    tr("Datei extrahiert:", "File extracted:") + f"\n{candidate}",
                 )
             except Exception as e:
                 messagebox.showerror(
                     tr("Fehler", "Error"),
                     tr("Schreiben fehlgeschlagen:", "Write failed:") + f"\n{e}",
                 )
+#######################
 
         # Erweiterte Funktionen zur Auswahl von Dateien für das Verstecken/Extrahieren.
         # Diese Methoden aktualisieren jeweils die zugehörigen StringVar-Variablen und
@@ -7470,106 +7589,106 @@ def launch_gui(path: Path) -> None:
                 except Exception:
                     self.extract_stego_path = f
 
-        def gui_select_extract_output(self):
-            """Wählt den Ausgabepfad für die extrahierte Datei."""
-            self.touch()
-            # Standardmäßig wird kein spezieller Dateiname vorgeschlagen, da der Dateiname
-            # aus der Stego-Datei ermittelt werden kann. Der Benutzer kann aber
-            # optional einen eigenen Dateinamen angeben.
-            f = filedialog.asksaveasfilename(
-                parent=self.root,
-                title=tr(
-                    "Speicherort für extrahierte Datei wählen",
-                    "Select destination for extracted file",
-                ),
-                defaultextension="",
-                filetypes=[(tr("Alle Dateien", "All files"), "*.*")],
-            )
-            if f:
-                try:
-                    self.extract_output_path.set(f)
-                except Exception:
-                    self.extract_output_path = f
+        # Die Auswahl eines Ausgabepfads für die extrahierte Datei ist nicht mehr notwendig.
+        # Die extrahierte Datei wird im gleichen Ordner wie die Stego-Datei und unter dem
+        # Originalnamen (ggf. mit Zähler-Suffix) gespeichert.
 
-        def gui_do_extract(self):
-            """Extrahiert den versteckten Inhalt aus der angegebenen .hid-Datei."""
-            self.touch()
-            try:
-                stego_f = self.extract_stego_path.get().strip()
-            except Exception:
-                stego_f = str(self.extract_stego_path).strip()
-            try:
-                out_f = self.extract_output_path.get().strip()
-            except Exception:
-                out_f = str(self.extract_output_path).strip()
-            if not stego_f:
+        def gui_do_extract(self) -> None:
+            """Startseiten-Handler zum Extrahieren einer versteckten Datei.
+    
+            Benötigt nur noch die .hid- bzw. Stego-Datei und das Passwort.
+            Der Dateiname der versteckten Datei wird aus dem Payload gelesen und
+            automatisch im gleichen Ordner wie die Stego-Datei gespeichert.
+            Existiert dort bereits eine Datei mit demselben Namen, wird ein
+            Zähler-Suffix (_1, _2, ...) angehängt.
+            """
+            if HARDENED_SAFE_MODE:
                 messagebox.showerror(
-                    tr("Fehler", "Error"),
-                    tr("Bitte wählen Sie eine .hid-Datei aus.", "Please select a .hid file."),
+                    tr("Safe-Mode aktiv", "Safe mode active"),
+                    tr("Steganographie ist im Safe-Mode deaktiviert.",
+                       "Steganography is disabled in safe mode."),
                     parent=self.root,
                 )
                 return
-            if not out_f:
+    
+            stego_path_str = self.extract_stego_path.get().strip()
+            if not stego_path_str:
                 messagebox.showerror(
-                    tr("Fehler", "Error"),
-                    tr(
-                        "Bitte wählen Sie einen Ausgabepfad für die extrahierte Datei.",
-                        "Please select a destination path for the extracted file.",
-                    ),
+                    tr("Fehlende Eingabe", "Missing input"),
+                    tr("Bitte wähle die Datei mit verstecktem Inhalt aus.",
+                       "Please select the file that contains hidden data."),
                     parent=self.root,
                 )
                 return
-            pw = simpledialog.askstring(
-                tr("Passwort", "Password"),
-                tr("Passwort für Entschlüsselung:", "Password for decryption:"),
-                show="*",
-                parent=self.root,
-            )
+            if not os.path.exists(stego_path_str):
+                messagebox.showerror(
+                    tr("Datei nicht gefunden", "File not found"),
+                    tr("Die angegebene Datei existiert nicht.",
+                       "The selected file does not exist."),
+                    parent=self.root,
+                )
+                return
+    
+            pw = self.extract_password.get()
             if not pw:
-                return
-            # Arbeiterfunktion: Extrahieren, entschlüsseln und schreiben
-            def do_extract_work(stego: str, passwd: str, dest: str) -> str:
-                orig_name, payload = decrypt_hidden_payload(Path(stego), passwd)
-                # Schreibe die Nutzdaten an den Zielort
-                atomic_write(Path(dest), payload)
-                write_audit("extract_file", f"{stego}->{dest}")
-                return orig_name
-            # Callback bei Erfolg
-            def on_extract_success(orig_name: str) -> None:
-                messagebox.showinfo(
-                    tr("Versteckte Datei", "Hidden file"),
-                    tr("Es wurde folgende Datei erkannt:", "The following file was detected:") + f"\n{orig_name}",
+                messagebox.showerror(
+                    tr("Fehlendes Passwort", "Missing password"),
+                    tr("Bitte gib das Passwort für die versteckte Datei ein.",
+                       "Please enter the password for the hidden file."),
                     parent=self.root,
                 )
+                return
+    
+            def do_extract_work(stego_str: str, passwd: str) -> Path:
+                # 1. Payload entschlüsseln
+                orig_name, payload = decrypt_hidden_payload(Path(stego_str), passwd)
+    
+                # 2. Zielpfad bestimmen (Ordner der Stego-Datei, Dateiname aus Payload)
+                dest_dir = Path(stego_str).parent
+                base = Path(orig_name)
+                candidate = dest_dir / base
+                counter = 1
+                # Kollisionen vermeiden: foo.txt, foo_1.txt, foo_2.txt, ...
+                while candidate.exists():
+                    candidate = dest_dir / f"{base.stem}_{counter}{base.suffix}"
+                    counter += 1
+
+                # 3. Sicher schreiben (inkl. Backup, falls bereits vorhanden)
+                backup_before_overwrite(candidate)
+                atomic_write(candidate, payload)
+    
+                # 4. Audit-Log
+                write_audit("extract_hidden_gui", f"{stego_str}->{candidate}")
+                return candidate
+    
+            def on_extract_success(out_path: Path) -> None:
                 messagebox.showinfo(
                     tr("Erfolg", "Success"),
-                    tr("Datei extrahiert:", "File extracted:") + f"\n{out_f}",
+                    tr("Versteckte Datei extrahiert nach:",
+                       "Hidden file extracted to:") + f"\n{out_path}",
                     parent=self.root,
                 )
-                # Felder leeren
+                # Eingabefelder leeren
                 try:
                     self.extract_stego_path.set("")
-                    self.extract_output_path.set("")
+                    self.extract_password.set("")
                 except Exception:
                     pass
-            # Callback bei Fehlern
-            def on_extract_error(exc: Exception):
-                messagebox.showerror(
-                    tr("Fehler", "Error"),
-                    tr("Extraktion fehlgeschlagen:", "Extraction failed:") + f"\n{exc}",
-                    parent=self.root,
+    
+            def on_extract_error(exc: Exception) -> None:
+                show_error(
+                    self.root,
+                    tr("Fehler beim Extrahieren", "Error while extracting"),
+                    tr("Beim Extrahieren der versteckten Datei ist ein Fehler aufgetreten:",
+                       "An error occurred while extracting the hidden file:")
+                    + f"\n{exc}",
                 )
-            # Starte Fortschrittsdialog
-            self.run_with_progress(
-                tr("Datei extrahieren", "Extract file"),
-                tr(
-                    "Datei wird extrahiert. Bitte warten...",
-                    "File is being extracted. Please wait...",
-                ),
+    
+            run_in_thread(
                 do_extract_work,
-                args=(stego_f, pw, out_f),
-                on_success=on_extract_success,
-                on_error=on_extract_error,
+                on_extract_success,
+                on_extract_error,
+                args=(stego_path_str, pw),
             )
 
         def gui_open_file_ops_dialog(self):
@@ -7898,12 +8017,10 @@ def launch_gui(path: Path) -> None:
                 command=self.gui_select_extract_stego,
             ).grid(row=1, column=0, sticky="w", pady=2)
             ttk.Label(extract_ops, textvariable=self.extract_stego_path, wraplength=480).grid(row=1, column=1, sticky="w", padx=6)
-            ttk.Button(
-                extract_ops,
-                text=tr("Ziel-Datei", "Destination file"),
-                command=self.gui_select_extract_output,
-            ).grid(row=2, column=0, sticky="w", pady=2)
-            ttk.Label(extract_ops, textvariable=self.extract_output_path, wraplength=480).grid(row=2, column=1, sticky="w", padx=6)
+            # Passwort-Eingabe für die Extraktion
+            ttk.Label(extract_ops, text=tr("Passwort", "Password")).grid(row=2, column=0, sticky="w", pady=2)
+            ttk.Entry(extract_ops, textvariable=self.extract_password, show="*").grid(row=2, column=1, sticky="w", padx=6)
+            # Entfernte Ziel-Datei-Auswahl. Die extrahierte Datei wird automatisch gespeichert.
             ttk.Button(
                 extract_ops,
                 text=tr("Extrahieren", "Extract"),
