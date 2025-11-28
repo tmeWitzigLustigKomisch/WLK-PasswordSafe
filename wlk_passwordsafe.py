@@ -1253,7 +1253,7 @@ def apply_config(cfg: Dict[str, object]) -> None:
 # Programmversionsnummer. Diese sollte bei jeder Funktionsänderung oder
 # Fehlerbehebung erhöht werden. Sie dient zur Anzeige in der Hilfe und in
 # Audit‑Logs, hat aber keinen Einfluss auf das Dateiformat.
-PROGRAM_VERSION = "2.8.8"
+PROGRAM_VERSION = "2.8.9"
 
 # ====================================
 # SECTION B — Abhängigkeitsprüfung
