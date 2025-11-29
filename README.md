@@ -10,7 +10,7 @@
 
 **WLK PasswordSafe** ist ein plattformübergreifender Passwort‑Manager, der als einzelne Python‑Datei ausgeliefert wird. Er richtet sich an Anwender, die ihre Zugangsdaten sicher, lokal und nachvollziehbar verwalten möchten – ganz ohne Cloud‑Anbindung oder Telemetrie. Dieses Repository enthält:
 
-- **`wlk_passwordsafe.py`** – das aktuelle Hauptskript in Version 2.8.6. Es bietet eine grafische Oberfläche (GUI) und einen mächtigen Kommandozeilenmodus (CLI).
+- **`wlk_passwordsafe.py`** – das aktuelle Hauptskript in Version 2.8.9. Es bietet eine grafische Oberfläche (GUI) und einen mächtigen Kommandozeilenmodus (CLI).
 - **`legacy/`** – einen Ordner mit sämtlichen Vorversionen des Programms sowie einer detaillierten Versionshistorie in `legacy/VERSION_HISTORY.md`. So lassen sich Änderungen transparent nachvollziehen.
 - **`images/`** – Screenshots der wichtigsten Programmfenster. Die Datei‑Namen sind selbsterklärend (z. B. `gui_no_vault_screen.png`, `cli_main_menu.png`).
 - **`README.md`** – diese ausführliche Dokumentation in Deutsch und Englisch.
