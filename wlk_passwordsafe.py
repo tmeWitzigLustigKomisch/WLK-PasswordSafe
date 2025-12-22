@@ -665,6 +665,75 @@ AUDIT_BACKUPS_TO_KEEP = 3          # Rotationskopien
 # kann über eine Konfigurationsdatei oder über Umgebungsvariablen überschrieben werden.
 HARDENED_SAFE_MODE = False
 
+# ---------------------------------------------------------------------------
+# Utility functions for table handling and error dialogs
+#
+# The password manager uses tables to store structured information. To improve
+# usability, we compute reasonable default column widths based on the header
+# and cell content. We also provide a small helper to show error dialogs.
+
+def adjust_table_column_widths(tv: 'ttk.Treeview', headers: list[str]) -> list[int]:
+    """
+    Compute and apply column widths for a Treeview widget.
+
+    Each column's width is derived from the length of its header and the
+    longest cell value in that column. A fixed character width is assumed
+    (approximately 8 pixels per character) and a padding of 20 pixels is
+    added to account for spacing. The computed widths are then applied to
+    the Treeview. A list of the widths is returned so they can be persisted.
+
+    Args:
+        tv: A ttk.Treeview instance whose column widths should be adjusted.
+        headers: A list of column identifiers corresponding to ``tv['columns']``.
+
+    Returns:
+        A list of integer widths for each column.
+    """
+    widths: list[int] = []
+    for h in headers:
+        # Determine the maximum string length of the header and all cell values
+        max_len = len(str(h))
+        for iid in tv.get_children(""):
+            val = tv.set(iid, h)
+            # Normalize to string for length calculation
+            if not isinstance(val, str):
+                val = str(val)
+            if len(val) > max_len:
+                max_len = len(val)
+        # Approximate pixels: 8 pixels per character + 20 for padding
+        width_px = max_len * 8 + 20
+        widths.append(width_px)
+    # Apply the calculated widths to the Treeview
+    for h, w in zip(headers, widths):
+        try:
+            tv.column(h, width=w, anchor="w")
+        except Exception:
+            pass
+    return widths
+
+
+def show_error(parent, title: str, message: str) -> None:
+    """
+    Display an error dialog to the user.
+
+    This helper wraps ``tkinter.messagebox.showerror`` and falls back to
+    printing to stderr if the GUI is unavailable. A missing ``show_error``
+    function previously led to a ``NameError`` when extracting hidden files
+    with an incorrect password.
+
+    Args:
+        parent: The parent window to associate the dialog with.
+        title: The dialog title.
+        message: The dialog body text.
+    """
+    try:
+        # Import lazily to avoid pulling tkinter at module import time.
+        from tkinter import messagebox as _mb
+        _mb.showerror(title, message, parent=parent)
+    except Exception:
+        import sys as _sys
+        print(f"{title}: {message}", file=_sys.stderr)
+
 
 # Werbehinweis und Programm-Icon.
 #
@@ -1253,7 +1322,10 @@ def apply_config(cfg: Dict[str, object]) -> None:
 # Programmversionsnummer. Diese sollte bei jeder Funktionsänderung oder
 # Fehlerbehebung erhöht werden. Sie dient zur Anzeige in der Hilfe und in
 # Audit‑Logs, hat aber keinen Einfluss auf das Dateiformat.
-PROGRAM_VERSION = "2.8.9"
+# Update the program version. See VERSION_HISTORY.md for more details.
+# Version 2.9.1: Fügt eine Schaltfläche zum Entfernen von Zeilen in Tabellen hinzu und
+# unterstützt mehrere Tabellen pro Eintrag beim Speichern und Laden.
+PROGRAM_VERSION = "2.9.1"
 
 # ====================================
 # SECTION B — Abhängigkeitsprüfung
@@ -5697,6 +5769,7 @@ def launch_gui(path: Path) -> None:
 
             # Handler für die Schaltfläche "Hinzufügen"
             def on_add_click():
+                nonlocal previous_tables
                 label = ent_label.get().strip()
                 if not label:
                     messagebox.showerror(tr("Fehler", "Error"), tr("Label erforderlich", "Label is required"), parent=top)
@@ -5724,7 +5797,20 @@ def launch_gui(path: Path) -> None:
                         if isinstance(table_tree, ttk.Treeview):
                             for iid_row in table_tree.get_children(""):
                                 table_data["rows"].append([table_tree.set(iid_row, h) for h in table_headers])
-                        info = _j.dumps({"__table__": table_data}, ensure_ascii=False)
+                            # Ermittele aktuelle Spaltenbreiten für spätere Verwendung
+                            widths_list: list[int] = []
+                            for h in table_headers:
+                                try:
+                                    widths_list.append(int(table_tree.column(h, width=None)))
+                                except Exception:
+                                    widths_list.append(100)
+                            table_data["widths"] = widths_list
+                        # Wenn bereits vorherige Tabellen gespeichert wurden, kombiniere sie
+                        if previous_tables:
+                            table_list_all = list(previous_tables) + [table_data]
+                            info = _j.dumps({"__multi_table__": table_list_all}, ensure_ascii=False)
+                        else:
+                            info = _j.dumps({"__table__": table_data}, ensure_ascii=False)
                     except Exception:
                         info = ""
                 else:
@@ -5817,6 +5903,8 @@ def launch_gui(path: Path) -> None:
             # Tabellenbezogene Variablen.
             table_tree: Optional[ttk.Treeview] = None  # type: ignore[var-annotated]
             table_headers: List[str] = []
+            # Sammlung vorheriger Tabellen für Mehrfach-Tabellen pro Eintrag
+            previous_tables: List[dict] = []
             table_sort_state: Dict[str, bool] = {}
 
             def sort_table(col: str) -> None:
@@ -5848,6 +5936,19 @@ def launch_gui(path: Path) -> None:
                     return
                 col_idx = int(col_id.strip("#")) - 1
                 current_value = table_tree.set(row_id, table_headers[col_idx])
+                # Wenn der aktuelle Zellwert wie ein Hyperlink aussieht, öffne ihn direkt
+                if current_value and isinstance(current_value, str) and (
+                    current_value.startswith("http://") or current_value.startswith("https://") or current_value.startswith("www.")
+                ):
+                    url3 = current_value
+                    # Ergänze ggf. das Protokoll für www‑Links
+                    if url3.startswith("www."):
+                        url3 = "https://" + url3
+                    try:
+                        webbrowser.open(url3)
+                    except Exception:
+                        pass
+                    return
                 edit_win = tk.Toplevel(top)
                 edit_win.title(tr("Zelle bearbeiten", "Edit cell"))
                 ttk.Label(edit_win, text=tr("Neuer Wert:", "New value:")).pack(padx=6, pady=(6,2))
@@ -5858,6 +5959,11 @@ def launch_gui(path: Path) -> None:
                 def commit():
                     new_val = entry.get()
                     table_tree.set(row_id, table_headers[col_idx], new_val)
+                    # Passe Spaltenbreiten an den neuen Inhalt an
+                    try:
+                        adjust_table_column_widths(table_tree, table_headers)
+                    except Exception:
+                        pass
                     edit_win.destroy()
                 # Enter bestätigt die Eingabe genau wie der OK-Button
                 entry.bind("<Return>", lambda _ev: commit())
@@ -5895,6 +6001,28 @@ def launch_gui(path: Path) -> None:
             def create_table():
                 """Fordert Spalten‑ und Zeilenzahl ab und erstellt den Treeview."""
                 nonlocal table_tree, table_headers, table_frame
+                # Wenn bereits eine Tabelle existiert, speichere diese für spätere Mehrfach‑Tabellen
+                if table_headers:
+                    try:
+                        # Extrahiere Zeilen und Spaltenbreiten der aktuellen Tabelle
+                        if table_tree:
+                            widths_saved: list[int] = []
+                            for h_prev in table_headers:
+                                try:
+                                    widths_saved.append(int(table_tree.column(h_prev, width=None)))
+                                except Exception:
+                                    widths_saved.append(100)
+                            rows_saved: list[list[str]] = []
+                            for iid_prev in table_tree.get_children(""):
+                                rows_saved.append([table_tree.set(iid_prev, h_prev2) for h_prev2 in table_headers])
+                            previous_tables.append({"headers": list(table_headers), "rows": rows_saved, "widths": widths_saved})
+                    except Exception:
+                        pass
+                    # Alte Tabelle zurücksetzen
+                    table_headers[:] = []
+                    for child in table_frame.winfo_children():
+                        child.destroy()
+                    table_tree = None
                 # Spaltenzahl abfragen
                 cols = simpledialog.askinteger(tr("Spaltenzahl", "Number of columns"),
                                                tr("Wie viele Spalten?", "How many columns?"),
@@ -5953,6 +6081,11 @@ def launch_gui(path: Path) -> None:
                 # Füge dünne Gitterlinien hinzu, um eine klare Tabellenstruktur zu schaffen.
                 try:
                     add_grid_to_treeview(tv)
+                except Exception:
+                    pass
+                # Adjust column widths based on header and cell content
+                try:
+                    adjust_table_column_widths(tv, table_headers)
                 except Exception:
                     pass
                 table_frame.rowconfigure(0, weight=1)
@@ -6061,6 +6194,11 @@ def launch_gui(path: Path) -> None:
                         add_grid_to_treeview(tv_new)
                     except Exception:
                         pass
+                    # Passe die Spaltenbreiten an die neuen Überschriften und Werte an
+                    try:
+                        adjust_table_column_widths(tv_new, table_headers)
+                    except Exception:
+                        pass
                     table_frame.rowconfigure(0, weight=1)
                     table_frame.columnconfigure(0, weight=1)
                     tv_new.bind("<Double-1>", edit_cell)
@@ -6079,11 +6217,61 @@ def launch_gui(path: Path) -> None:
             # werden können.
             btn_create_table = ttk.Button(frm, text=tr("Tabelle erstellen", "Create table"), command=create_table)
             btn_edit_columns = ttk.Button(frm, text=tr("Spalten bearbeiten", "Edit columns"), command=edit_columns)
+            # Zusätzliche Schaltflächen zum Hinzufügen und Entfernen von Zeilen.  Neue Zeilen
+            # werden am Tabellenende angefügt, während ausgewählte Zeilen gelöscht werden.
+            def add_row() -> None:
+                """Fügt eine leere Zeile am Ende der aktuellen Tabelle hinzu."""
+                nonlocal table_headers, table_tree
+                # Nur hinzufügen, wenn eine Tabelle vorhanden ist
+                if not table_headers or not table_tree:
+                    return
+                idx_local = len(table_tree.get_children(""))
+                tag_name_local = "evenrow" if idx_local % 2 == 0 else "oddrow"
+                table_tree.insert("", "end", values=["" for _ in table_headers], tags=(tag_name_local,))
+                # Aktualisiere Spaltenbreiten nach dem Hinzufügen der Zeile
+                try:
+                    adjust_table_column_widths(table_tree, table_headers)
+                except Exception:
+                    pass
+
+            def remove_row() -> None:
+                """Entfernt die aktuell ausgewählten Zeilen aus der Tabelle."""
+                nonlocal table_headers, table_tree
+                if not table_headers or not table_tree:
+                    return
+                # Bestimme ausgewählte Zeilen
+                selected = table_tree.selection()
+                if not selected:
+                    return
+                # Lösche alle ausgewählten Zeilen
+                for row_id in selected:
+                    try:
+                        table_tree.delete(row_id)
+                    except Exception:
+                        pass
+                # Weisen Sie den verbleibenden Zeilen abwechselnde Tags zu, damit die
+                # Hintergrundfarben korrekt bleiben
+                try:
+                    for idx_local, row_id in enumerate(table_tree.get_children("")):
+                        tag_name_local = "evenrow" if idx_local % 2 == 0 else "oddrow"
+                        table_tree.item(row_id, tags=(tag_name_local,))
+                except Exception:
+                    pass
+                # Optional: Breiten anpassen, um eventuelle Änderungen widerzuspiegeln
+                try:
+                    adjust_table_column_widths(table_tree, table_headers)
+                except Exception:
+                    pass
             # Buttons befinden sich in einem Rahmen innerhalb des Info-Containers, damit sie direkt
             # unter der Tabelle angezeigt werden können.
             table_btn_frame = ttk.Frame(info_container)
             btn_create_table.pack(in_=table_btn_frame, side="left", padx=2)
             btn_edit_columns.pack(in_=table_btn_frame, side="left", padx=2)
+            # Buttons zum Hinzufügen und Entfernen von Zeilen
+            btn_add_row = ttk.Button(frm, text=tr("Zeile hinzufügen", "Add row"), command=add_row)
+            btn_add_row.pack(in_=table_btn_frame, side="left", padx=2)
+            btn_remove_row = ttk.Button(frm, text=tr("Zeile entfernen", "Remove row"), command=remove_row)
+            btn_remove_row.pack(in_=table_btn_frame, side="left", padx=2)
 
             def on_format_change(event=None):
                 """Wechsle zwischen Text- und Tabellenansicht je nach Auswahl."""
@@ -6160,11 +6348,26 @@ def launch_gui(path: Path) -> None:
                 if info_format_var.get() == tr("Tabelle", "Table"):
                     try:
                         import json as _j
-                        table_data = {"headers": table_headers, "rows": []}
+                        # Extrahiere die Daten der aktuellen Tabelle
+                        table_data: dict = {"headers": table_headers, "rows": []}
                         if isinstance(table_tree, ttk.Treeview):
+                            # Zeilen kopieren
                             for iid_row2 in table_tree.get_children(""):
                                 table_data["rows"].append([table_tree.set(iid_row2, h) for h in table_headers])
-                        new_info = _j.dumps({"__table__": table_data}, ensure_ascii=False)
+                            # Aktuelle Spaltenbreiten erfassen
+                            widths_list2: list[int] = []
+                            for h in table_headers:
+                                try:
+                                    widths_list2.append(int(table_tree.column(h, width=None)))
+                                except Exception:
+                                    widths_list2.append(100)
+                            table_data["widths"] = widths_list2
+                        # Unterstütze Mehrfach-Tabellen beim Speichern
+                        if previous_tables:
+                            table_list_all = list(previous_tables) + [table_data]
+                            new_info = _j.dumps({"__multi_table__": table_list_all}, ensure_ascii=False)
+                        else:
+                            new_info = _j.dumps({"__table__": table_data}, ensure_ascii=False)
                     except Exception:
                         new_info = e.info
                 else:
@@ -6238,10 +6441,20 @@ def launch_gui(path: Path) -> None:
             table_data_default = None
             try:
                 parsed = _json.loads(e.info)
-                if isinstance(parsed, dict) and "__table__" in parsed:
-                    table_data_default = parsed["__table__"]
-                    if isinstance(table_data_default, dict) and "headers" in table_data_default and "rows" in table_data_default:
-                        is_table_default = True
+                if isinstance(parsed, dict):
+                    # Unterstützung für mehrere Tabellen pro Eintrag
+                    if "__multi_table__" in parsed:
+                        tbl_list = parsed.get("__multi_table__", [])
+                        if isinstance(tbl_list, list) and tbl_list:
+                            # Alle bis auf die letzte Tabelle in previous_tables übernehmen
+                            previous_tables.extend(tbl_list[:-1])
+                            table_data_default = tbl_list[-1]
+                            if isinstance(table_data_default, dict) and "headers" in table_data_default and "rows" in table_data_default:
+                                is_table_default = True
+                    elif "__table__" in parsed:
+                        table_data_default = parsed["__table__"]
+                        if isinstance(table_data_default, dict) and "headers" in table_data_default and "rows" in table_data_default:
+                            is_table_default = True
             except Exception:
                 pass
             # Format‑Auswahl
@@ -6278,6 +6491,8 @@ def launch_gui(path: Path) -> None:
             table_frame = ttk.Frame(info_container)
             table_tree: Optional[ttk.Treeview] = None  # type: ignore[var-annotated]
             table_headers: List[str] = []
+            # Sammlung vorheriger Tabellen für Mehrfach‑Tabellen pro Eintrag
+            previous_tables: List[dict] = []
             table_sort_state: Dict[str, bool] = {}
             def sort_table(col: str) -> None:
                 nonlocal table_tree, table_sort_state
@@ -6304,6 +6519,18 @@ def launch_gui(path: Path) -> None:
                     return
                 col_idx2 = int(col_id2.strip("#")) - 1
                 current_value2 = table_tree.set(row_id2, table_headers[col_idx2])
+                # Wenn der aktuelle Wert ein Hyperlink ist, öffne ihn direkt
+                if current_value2 and isinstance(current_value2, str) and (
+                    current_value2.startswith("http://") or current_value2.startswith("https://") or current_value2.startswith("www.")
+                ):
+                    url4 = current_value2
+                    if url4.startswith("www."):
+                        url4 = "https://" + url4
+                    try:
+                        webbrowser.open(url4)
+                    except Exception:
+                        pass
+                    return
                 edit_win = tk.Toplevel(top)
                 edit_win.title(tr("Zelle bearbeiten", "Edit cell"))
                 ttk.Label(edit_win, text=tr("Neuer Wert:", "New value:")).pack(padx=6, pady=(6,2))
@@ -6314,6 +6541,11 @@ def launch_gui(path: Path) -> None:
                 def commit2():
                     new_val2 = entry2.get()
                     table_tree.set(row_id2, table_headers[col_idx2], new_val2)
+                    # Passe Spaltenbreiten an, damit lange Werte vollständig sichtbar sind
+                    try:
+                        adjust_table_column_widths(table_tree, table_headers)
+                    except Exception:
+                        pass
                     edit_win.destroy()
                 # Enter bestätigt die Eingabe genau wie der OK-Button
                 entry2.bind("<Return>", lambda _ev: commit2())
@@ -6344,7 +6576,28 @@ def launch_gui(path: Path) -> None:
                     finally:
                         menu.grab_release()
             def create_table():
-                nonlocal table_tree, table_headers, table_frame
+                nonlocal table_tree, table_headers, table_frame, previous_tables
+                # Wenn bereits eine Tabelle vorhanden ist, speichere sie in previous_tables, bevor eine neue erstellt wird
+                if table_headers:
+                    try:
+                        if table_tree:
+                            widths_saved2: list[int] = []
+                            for h_prev3 in table_headers:
+                                try:
+                                    widths_saved2.append(int(table_tree.column(h_prev3, width=None)))
+                                except Exception:
+                                    widths_saved2.append(100)
+                            rows_saved2: list[list[str]] = []
+                            for iid_prev3 in table_tree.get_children(""):
+                                rows_saved2.append([table_tree.set(iid_prev3, h_prev4) for h_prev4 in table_headers])
+                            previous_tables.append({"headers": list(table_headers), "rows": rows_saved2, "widths": widths_saved2})
+                    except Exception:
+                        pass
+                    # Reset alte Tabelle
+                    table_headers[:] = []
+                    for child in table_frame.winfo_children():
+                        child.destroy()
+                    table_tree = None
                 cols = simpledialog.askinteger(tr("Spaltenzahl", "Number of columns"),
                                                tr("Wie viele Spalten?", "How many columns?"),
                                                parent=top, minvalue=1, maxvalue=20)
@@ -6398,6 +6651,11 @@ def launch_gui(path: Path) -> None:
                 # Füge Gitterlinien hinzu, um Spalten und Zeilen klar zu trennen
                 try:
                     add_grid_to_treeview(tv2)
+                except Exception:
+                    pass
+                # Passe die Spaltenbreiten an Überschriften und Werte an
+                try:
+                    adjust_table_column_widths(tv2, table_headers)
                 except Exception:
                     pass
                 table_frame.rowconfigure(0, weight=1)
@@ -6493,6 +6751,11 @@ def launch_gui(path: Path) -> None:
                         add_grid_to_treeview(tv_new2)
                     except Exception:
                         pass
+                    # Passe die Spaltenbreiten an Überschriften und Werte an
+                    try:
+                        adjust_table_column_widths(tv_new2, table_headers)
+                    except Exception:
+                        pass
                     table_frame.rowconfigure(0, weight=1)
                     table_frame.columnconfigure(0, weight=1)
                     tv_new2.bind("<Double-1>", edit_cell)
@@ -6513,11 +6776,55 @@ def launch_gui(path: Path) -> None:
             # einheitliche Platzierung. Der Wrap-Checkbutton bleibt separat.
             btn_create_table = ttk.Button(frm, text=tr("Tabelle erstellen", "Create table"), command=create_table)
             btn_edit_columns = ttk.Button(frm, text=tr("Spalten bearbeiten", "Edit columns"), command=edit_columns)
+            # Zusätzliche Schaltflächen zum Hinzufügen und Entfernen von Zeilen innerhalb der Tabelle
+            def add_row() -> None:
+                """Fügt eine leere Zeile am Ende der aktuellen Tabelle hinzu."""
+                nonlocal table_headers, table_tree
+                if not table_headers or not table_tree:
+                    return
+                idx_local2 = len(table_tree.get_children(""))
+                tag_name_local2 = "evenrow" if idx_local2 % 2 == 0 else "oddrow"
+                table_tree.insert("", "end", values=["" for _ in table_headers], tags=(tag_name_local2,))
+                try:
+                    adjust_table_column_widths(table_tree, table_headers)
+                except Exception:
+                    pass
+
+            def remove_row() -> None:
+                """Entfernt die aktuell ausgewählten Zeilen aus der Tabelle."""
+                nonlocal table_headers, table_tree
+                if not table_headers or not table_tree:
+                    return
+                selected = table_tree.selection()
+                if not selected:
+                    return
+                for row_id in selected:
+                    try:
+                        table_tree.delete(row_id)
+                    except Exception:
+                        pass
+                # Reassign alternating tags to maintain background colors
+                try:
+                    for idx2, row_id in enumerate(table_tree.get_children("")):
+                        tag_name_local2 = "evenrow" if idx2 % 2 == 0 else "oddrow"
+                        table_tree.item(row_id, tags=(tag_name_local2,))
+                except Exception:
+                    pass
+                # Adjust column widths after removing rows
+                try:
+                    adjust_table_column_widths(table_tree, table_headers)
+                except Exception:
+                    pass
             # Buttons befinden sich in einem Rahmen innerhalb des Info-Containers, damit sie direkt
             # unter der Tabelle angezeigt werden können.
             table_btn_frame = ttk.Frame(info_container)
             btn_create_table.pack(in_=table_btn_frame, side="left", padx=2)
             btn_edit_columns.pack(in_=table_btn_frame, side="left", padx=2)
+            # Buttons zum Hinzufügen und Entfernen von Zeilen
+            btn_add_row = ttk.Button(frm, text=tr("Zeile hinzufügen", "Add row"), command=add_row)
+            btn_add_row.pack(in_=table_btn_frame, side="left", padx=2)
+            btn_remove_row = ttk.Button(frm, text=tr("Zeile entfernen", "Remove row"), command=remove_row)
+            btn_remove_row.pack(in_=table_btn_frame, side="left", padx=2)
             wrap_check = ttk.Checkbutton(frm, text=tr("Zeilenumbruch", "Wrap lines"), variable=wrap_var, command=toggle_wrap)
             def on_format_change(event=None):
                 fmt = info_format_var.get()
@@ -6561,9 +6868,23 @@ def launch_gui(path: Path) -> None:
                         tv0.tag_configure("oddrow", background=ENTRY_BG_COLOR)
                     except Exception:
                         pass
-                    for h0 in table_headers:
+                    # Lese gespeicherte Spaltenbreiten, falls vorhanden
+                    widths0 = []
+                    try:
+                        if isinstance(table_data_default, dict):
+                            widths0 = list(table_data_default.get("widths", []))
+                    except Exception:
+                        widths0 = []
+                    for idx0, h0 in enumerate(table_headers):
                         tv0.heading(h0, text=h0, command=lambda col=h0: sort_table(col))
-                        tv0.column(h0, width=100, anchor="w")
+                        # Wenn gespeicherte Breite vorhanden, anwenden, sonst vorerst Standard
+                        if widths0 and idx0 < len(widths0):
+                            try:
+                                tv0.column(h0, width=int(widths0[idx0]), anchor="w")
+                            except Exception:
+                                tv0.column(h0, width=100, anchor="w")
+                        else:
+                            tv0.column(h0, width=100, anchor="w")
                     # Füge vorhandene Daten mit alternierenden Tags ein
                     for idx0, row0 in enumerate(rows0):
                         vals0 = row0[:len(table_headers)] + [""] * (len(table_headers) - len(row0))
@@ -6578,6 +6899,12 @@ def launch_gui(path: Path) -> None:
                     # Füge Gitterlinien hinzu, damit Zeilen und Spalten deutlich abgegrenzt sind
                     try:
                         add_grid_to_treeview(tv0)
+                    except Exception:
+                        pass
+                    # Wenn keine gespeicherten Breiten vorhanden sind, berechne sinnvolle Standardbreiten
+                    try:
+                        if not widths0:
+                            adjust_table_column_widths(tv0, table_headers)
                     except Exception:
                         pass
                     table_frame.rowconfigure(0, weight=1)
