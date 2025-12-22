@@ -1323,9 +1323,11 @@ def apply_config(cfg: Dict[str, object]) -> None:
 # Fehlerbehebung erhöht werden. Sie dient zur Anzeige in der Hilfe und in
 # Audit‑Logs, hat aber keinen Einfluss auf das Dateiformat.
 # Update the program version. See VERSION_HISTORY.md for more details.
-# Version 2.9.1: Fügt eine Schaltfläche zum Entfernen von Zeilen in Tabellen hinzu und
-# unterstützt mehrere Tabellen pro Eintrag beim Speichern und Laden.
-PROGRAM_VERSION = "2.9.1"
+# Version 2.9.1: Fügt einen „Zeile entfernen“-Button zu Tabellen hinzu und
+# unterstützt mehrere Tabellen pro Eintrag. Links in Tabellen sind in allen
+# Ansichten klickbar; im Anzeigemodus werden sie blau dargestellt. Mehrere
+# Tabellen werden korrekt gespeichert und im Detailfenster untereinander angezeigt.
+PROGRAM_VERSION = "2.9.2"
 
 # ====================================
 # SECTION B — Abhängigkeitsprüfung
@@ -5469,6 +5471,17 @@ def launch_gui(path: Path) -> None:
             top = tk.Toplevel(self.root)
 
             top.title(f"Details: {e.label}")
+            # Setze eine größere Startgröße für das Detailfenster, damit breite Tabellen besser
+            # sichtbar sind. Diese Geometrie ist frei skalierbar; der Benutzer kann das
+            # Fenster weiterhin anpassen. Ohne diese Einstellung wird das Fenster sehr schmal
+            # erstellt, was in der Praxis unpraktisch ist. Die Größe orientiert sich an den
+            # Dialogen zum Bearbeiten, die ebenfalls großzügiger dimensioniert sind.
+            try:
+                top.geometry("1000x600")
+            except Exception:
+                # Falls geometry auf dieser Plattform nicht verfügbar ist, ignorieren wir die
+                # Ausnahme und verwenden die Standardgröße.
+                pass
 
             frm = ttk.Frame(top, padding=8)
 
@@ -5592,100 +5605,176 @@ def launch_gui(path: Path) -> None:
             info_frame.rowconfigure(0, weight=1)
             info_frame.columnconfigure(0, weight=1)
 
-            # Versuche zu erkennen, ob die Info als Tabelle gespeichert wurde und diese darstellen
+            # Versuche zu erkennen, ob die Info als Tabelle oder mehrere Tabellen gespeichert wurde
             import json as _json
-            is_table = False
-            table_data = None
+            table_sections: List[dict] = []
             try:
                 parsed = _json.loads(e.info)
-                if isinstance(parsed, dict) and "__table__" in parsed:
-                    table_data = parsed["__table__"]
-                    if isinstance(table_data, dict) and "headers" in table_data and "rows" in table_data:
-                        is_table = True
+                if isinstance(parsed, dict):
+                    # Mehrere Tabellen? (ältere Struktur)
+                    if "__multi_table__" in parsed:
+                        tbl_list = parsed.get("__multi_table__", [])
+                        if isinstance(tbl_list, list):
+                            table_sections = [tbl for tbl in tbl_list if isinstance(tbl, dict) and "headers" in tbl and "rows" in tbl]
+                    # Einzelne Tabelle (ältere Struktur)
+                    elif "__table__" in parsed:
+                        tbl = parsed.get("__table__")
+                        if isinstance(tbl, dict) and "headers" in tbl and "rows" in tbl:
+                            table_sections = [tbl]
             except Exception:
                 pass
 
-            if is_table:
-                # Tabellenansicht anzeigen
-                table_headers = table_data["headers"]
-                table_rows = table_data["rows"]
-                table_sort_state = {}
-                table_tree = None
-
-                def sort_table(col: str) -> None:
-                    """Sortiere die Tabellenzeilen anhand der angegebenen Spalte."""
-                    nonlocal table_tree, table_sort_state
-                    if not table_tree:
-                        return
-                    # Erstelle Liste aus Wert und Zeilen-ID
-                    items = [(table_tree.set(iid, col), iid) for iid in table_tree.get_children("")]
-                    # Versuche numerisch, dann lexikographisch zu sortieren
-                    try:
-                        items.sort(key=lambda x: float(x[0]), reverse=table_sort_state.get(col, False))
-                    except Exception:
-                        # Strings normalisieren zu Kleinbuchstaben
-                        items.sort(key=lambda x: x[0].lower() if isinstance(x[0], str) else str(x[0]).lower(),
-                                   reverse=table_sort_state.get(col, False))
-                    for index, (_, iid) in enumerate(items):
-                        table_tree.move(iid, "", index)
-                    table_sort_state[col] = not table_sort_state.get(col, False)
-
-                # Treeview erzeugen
-                tv = ttk.Treeview(info_frame, columns=table_headers, show="headings")
-                # Hintergrund für die Tabelle setzen.  Verwende den globalen
-                # Tabellen‑Hintergrund (TABLE_BG_COLOR), damit sich das
-                # Farbschema beim Umschalten des Dark‑Modes ändert.
-                try:
-                    style = ttk.Style()
-                    style.configure("View.Table", background=TABLE_BG_COLOR, fieldbackground=TABLE_BG_COLOR)
-                    if GUI_FG_COLOR:
-                        style.configure("View.Table", foreground=GUI_FG_COLOR)
-                    tv.configure(style="View.Table")
-                except Exception:
-                    pass
-                # Definiere Tags für abwechselnde Zeilenfarben, um eine leichte
-                # Tabellenstruktur zu erzeugen.  Die Tags nutzen die globalen
-                # Farbkonstanten, sodass sie sich beim Umschalten des Farbschemas
-                # automatisch anpassen.
-                try:
-                    tv.tag_configure("evenrow", background=TABLE_BG_COLOR)
-                    tv.tag_configure("oddrow", background=ENTRY_BG_COLOR)
-                except Exception:
-                    pass
-
-                for h in table_headers:
-                    # Nutze lambda mit default arg, damit jede Spalte korrekt sortiert wird
-                    tv.heading(h, text=h, command=lambda col=h: sort_table(col))
-                    tv.column(h, width=100, anchor="w")
-                # Zeilen einfügen; falls zu wenige/zu viele Werte, anpassen.  Jede
-                # Zeile erhält einen Tag ("evenrow" oder "oddrow"), um den
-                # Hintergrund abwechselnd zu gestalten.  Dadurch wirkt die
-                # Tabelle strukturiert ohne explizite Gitterlinien.
-                for idx, row in enumerate(table_rows):
-                    if isinstance(row, list):
-                        values = list(row) + ["" for _ in range(len(table_headers) - len(row))]
-                        values = values[:len(table_headers)]
-                    else:
-                        values = [str(row)] + ["" for _ in range(len(table_headers) - 1)]
-                    tag_name = "evenrow" if idx % 2 == 0 else "oddrow"
-                    tv.insert("", "end", values=values, tags=(tag_name,))
-                sb_y = ttk.Scrollbar(info_frame, orient="vertical", command=tv.yview)
-                sb_x = ttk.Scrollbar(info_frame, orient="horizontal", command=tv.xview)
-                tv.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
-                tv.grid(row=0, column=0, sticky="nsew")
-                sb_y.grid(row=0, column=1, sticky="ns")
-                sb_x.grid(row=1, column=0, sticky="ew")
-    
-                # >>> NEU: senkrechte Spaltentrenner für die Detail-Tabelle
-                try:
-                    add_vertical_grid_to_treeview(tv)
-                except Exception:
-                    pass
-
-                info_frame.rowconfigure(0, weight=1)
-                info_frame.columnconfigure(0, weight=1)
-                table_tree = tv
-
+            # Multi‑info segments are not supported anymore. Only a single table is displayed (if present).
+            if table_sections:
+                # Es können mehrere Tabellen vorhanden sein. Jede Tabelle wird als Raster aus Labels dargestellt,
+                # damit einzelne Zellen (Links) farblich hervorgehoben und klickbar gemacht werden können.
+                for tbl_idx, tbl_data in enumerate(table_sections):
+                    headers = list(tbl_data.get("headers", []))
+                    rows_data = list(tbl_data.get("rows", []))
+                    widths = list(tbl_data.get("widths", [])) if isinstance(tbl_data.get("widths", []), list) else []
+                    # Container für sortierstatus pro Spalte
+                    sort_state_local: Dict[int, bool] = {}
+                    # Canvas und Frame zum Scrollen der Tabelle
+                    canvas = tk.Canvas(info_frame, highlightthickness=0)
+                    frame_table = ttk.Frame(canvas)
+                    # Scrollbars
+                    vsb = ttk.Scrollbar(info_frame, orient="vertical", command=canvas.yview)
+                    hsb = ttk.Scrollbar(info_frame, orient="horizontal", command=canvas.xview)
+                    canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+                    # Ermögliche Scrollen per Mausrad im Canvas. Anstatt die Ereignisse nur an das
+                    # Canvas zu binden, registrieren wir globale Bindings, sobald der Mauszeiger
+                    # das Canvas betritt. Dadurch lässt sich die Tabelle auch dann mit dem Rad
+                    # scrollen, wenn der Zeiger nicht direkt auf der Scrollleiste steht. Beim
+                    # Verlassen des Canvas werden die Bindings wieder entfernt, um Seiteneffekte
+                    # auf andere Teile der Anwendung zu vermeiden.
+                    def _on_mousewheel(event, cnv=canvas):
+                        """Behandelt vertikales Scrollen mit dem Mausrad für das Canvas."""
+                        delta = getattr(event, 'delta', 0)
+                        if delta:
+                            cnv.yview_scroll(int(-1 * (delta / abs(delta))), "units")
+                            return "break"
+                    def _bind_canvas_mousewheel(_event, cnv=canvas):
+                        # Windows/macOS verwenden <MouseWheel>, Linux X11 nutzt Button‑4/5.
+                        cnv.bind_all("<MouseWheel>", lambda ev, c=cnv: _on_mousewheel(ev, c))
+                        cnv.bind_all("<Button-4>", lambda ev, c=cnv: c.yview_scroll(-1, "units"))
+                        cnv.bind_all("<Button-5>", lambda ev, c=cnv: c.yview_scroll(1, "units"))
+                    def _unbind_canvas_mousewheel(_event, cnv=canvas):
+                        cnv.unbind_all("<MouseWheel>")
+                        cnv.unbind_all("<Button-4>")
+                        cnv.unbind_all("<Button-5>")
+                    canvas.bind("<Enter>", _bind_canvas_mousewheel)
+                    canvas.bind("<Leave>", _unbind_canvas_mousewheel)
+                    # Positioniere Canvas und Scrollbars im grid
+                    row_start = tbl_idx * 3
+                    canvas.grid(row=row_start, column=0, sticky="nsew")
+                    vsb.grid(row=row_start, column=1, sticky="ns")
+                    hsb.grid(row=row_start + 1, column=0, sticky="ew")
+                    info_frame.rowconfigure(row_start, weight=1)
+                    info_frame.columnconfigure(0, weight=1)
+                    # Füge das Frame in den Canvas ein
+                    canvas.create_window((0, 0), window=frame_table, anchor="nw")
+                    # Hilfsfunktion zur Aktualisierung der Scrollregion
+                    def on_frame_configure(event, cnv=canvas):
+                        cnv.configure(scrollregion=cnv.bbox("all"))
+                    frame_table.bind("<Configure>", on_frame_configure)
+                    # Funktion zum Neuaufbau des Tabellenrasters nach Sortierung
+                    def build_grid():
+                        # Entferne alle vorhandenen Kinder im frame_table
+                        for child in frame_table.winfo_children():
+                            child.destroy()
+                        # Erzeuge Header-Zeile
+                        for col_idx, h in enumerate(headers):
+                            # Verwende tk.Label mit Rahmen, um auch die Kopfzeilen
+                            # als Kästchen darzustellen. ttk.Label unterstützt keine
+                            # solide Rahmenanzeige in gleicher Weise wie tk.Label.
+                            lbl_hdr = tk.Label(frame_table, text=h, bd=1, relief="solid", padx=2, pady=1)
+                            lbl_hdr.grid(row=0, column=col_idx, sticky="nsew", padx=1, pady=1)
+                            # macht Header klickbar zum Sortieren
+                            def make_sort_callback(ci: int) -> Callable[[Any], None]:
+                                def _sort(_event=None) -> None:
+                                    # Holen Sie das aktuelle Sortierreihenfolge-Flag für diese Spalte
+                                    rev = sort_state_local.get(ci, False)
+                                    try:
+                                        # Versuchen Sie numerisch zu sortieren
+                                        rows_data.sort(key=lambda row: float(row[ci]) if isinstance(row[ci], (int, float, str)) and str(row[ci]).replace(',', '.').replace(' ', '').replace('\u202f','').replace('\xa0','') != '' else float('-inf'), reverse=rev)
+                                    except Exception:
+                                        # Lexikographische Sortierung
+                                        rows_data.sort(key=lambda row: str(row[ci]).lower() if row[ci] is not None else '', reverse=rev)
+                                    sort_state_local[ci] = not rev
+                                    build_grid()
+                                return _sort
+                            lbl_hdr.bind("<Button-1>", make_sort_callback(col_idx))
+                            # Setze Spaltengewicht, damit sich Spalten proportional vergrößern
+                            frame_table.columnconfigure(col_idx, weight=1)
+                        # Datenzeilen
+                        for r_idx, row in enumerate(rows_data):
+                            # Fülle fehlende Werte auf leere Strings auf
+                            if not isinstance(row, list):
+                                row_vals = [str(row)] + ["" for _ in range(len(headers)-1)]
+                            else:
+                                row_vals = list(row) + ["" for _ in range(len(headers) - len(row))]
+                                row_vals = row_vals[:len(headers)]
+                            for c_idx, cell_val in enumerate(row_vals):
+                                # Bestimme Hintergrundfarbe abhängig von Zeilennummer
+                                bg_color = TABLE_BG_COLOR if (r_idx % 2 == 0) else ENTRY_BG_COLOR
+                                # Standard-Schriftfarbe
+                                fg_color = GUI_FG_COLOR if GUI_FG_COLOR else "black"
+                                # Flag für Link
+                                is_link = False
+                                if isinstance(cell_val, str) and (cell_val.startswith("http://") or cell_val.startswith("https://") or cell_val.startswith("www.")):
+                                    fg_color = "blue"
+                                    is_link = True
+                                lbl_cell = tk.Label(frame_table, text=cell_val, bg=bg_color, fg=fg_color, anchor="w", padx=2, pady=1)
+                                # Wenn Link: unterstreichen und klickbar
+                                if is_link:
+                                    # Unterstrichene Schrift
+                                    try:
+                                        font = (lbl_cell.cget("font"), 0, "underline")
+                                        lbl_cell.configure(font=font, cursor="hand2")
+                                    except Exception:
+                                        lbl_cell.configure(cursor="hand2")
+                                    # Bindung, um Link zu öffnen
+                                    def open_link(event=None, url=cell_val):
+                                        url_link = url
+                                        if url_link.startswith("www."):
+                                            url_link = "https://" + url_link
+                                        try:
+                                            webbrowser.open(url_link)
+                                        except Exception:
+                                            pass
+                                    lbl_cell.bind("<Button-1>", open_link)
+                                    # Kontextmenü bei Rechtsklick
+                                    def show_ctx(event=None, url=cell_val):
+                                        menu = tk.Menu(frame_table, tearoff=0)
+                                        def _open():
+                                            url_link = url
+                                            if url_link.startswith("www."):
+                                                url2 = "https://" + url_link
+                                            else:
+                                                url2 = url_link
+                                            try:
+                                                webbrowser.open(url2)
+                                            except Exception:
+                                                pass
+                                        menu.add_command(label=tr("Link öffnen", "Open link"), command=_open)
+                                        try:
+                                            menu.tk_popup(event.x_root, event.y_root)
+                                        finally:
+                                            menu.grab_release()
+                                    lbl_cell.bind("<Button-3>", show_ctx)
+                                lbl_cell.grid(row=r_idx + 1, column=c_idx, sticky="nsew", padx=1, pady=1)
+                                # Einstellung, dass sich Spalten ausdehnen
+                                frame_table.columnconfigure(c_idx, weight=1)
+                        # Passe Spaltenbreiten an gespeicherte Werte an, falls vorhanden
+                        if widths:
+                            for idx_w, w in enumerate(widths):
+                                try:
+                                    frame_table.grid_columnconfigure(idx_w, minsize=int(w))
+                                except Exception:
+                                    pass
+                    # Erstaufbau des Rasters
+                    build_grid()
+                # Ende der Tabellenbearbeitung
             else:
                 # Textansicht anzeigen
                 txt_info = tk.Text(info_frame, wrap="word")
@@ -5769,7 +5858,6 @@ def launch_gui(path: Path) -> None:
 
             # Handler für die Schaltfläche "Hinzufügen"
             def on_add_click():
-                nonlocal previous_tables
                 label = ent_label.get().strip()
                 if not label:
                     messagebox.showerror(tr("Fehler", "Error"), tr("Label erforderlich", "Label is required"), parent=top)
@@ -5805,12 +5893,8 @@ def launch_gui(path: Path) -> None:
                                 except Exception:
                                     widths_list.append(100)
                             table_data["widths"] = widths_list
-                        # Wenn bereits vorherige Tabellen gespeichert wurden, kombiniere sie
-                        if previous_tables:
-                            table_list_all = list(previous_tables) + [table_data]
-                            info = _j.dumps({"__multi_table__": table_list_all}, ensure_ascii=False)
-                        else:
-                            info = _j.dumps({"__table__": table_data}, ensure_ascii=False)
+                        # Speichere immer als einzelne Tabelle
+                        info = _j.dumps({"__table__": table_data}, ensure_ascii=False)
                     except Exception:
                         info = ""
                 else:
@@ -5907,6 +5991,84 @@ def launch_gui(path: Path) -> None:
             previous_tables: List[dict] = []
             table_sort_state: Dict[str, bool] = {}
 
+            # Helferfunktion: zeigt zuvor angelegte Tabellen (previous_tables) unterhalb der aktuellen
+            # Tabelle an. Jede Tabelle wird im selben Stil wie in der Detailansicht dargestellt
+            # und ist schreibgeschützt. So können Benutzer sehen, welche Tabellen sie bereits
+            # erstellt haben, auch wenn sie nicht mehr bearbeitet werden.
+            def display_previous_tables() -> None:
+                # Entferne vorhandene Darstellungen vorheriger Tabellen
+                # (Widgets mit dem Tag "prev_table"). Wir nutzen ein spezielles Tag, um
+                # Vorversionen zu identifizieren.
+                for child in info_container.grid_slaves():
+                    # Widgets, die sich in einer Zeile >=2 befinden, gehören zu vorherigen Tabellen
+                    info_row = child.grid_info().get('row')
+                    if info_row is not None and int(info_row) >= 2:
+                        child.destroy()
+                # Für jede gespeicherte vorherige Tabelle einen neuen Canvas erstellen
+                for idx_prev, tbl in enumerate(previous_tables):
+                    try:
+                        headers_prev = list(tbl.get("headers", []))
+                        rows_prev = list(tbl.get("rows", []))
+                        widths_prev = list(tbl.get("widths", [])) if isinstance(tbl.get("widths", []), list) else []
+                        # Canvas und zugehöriges Frame für die Tabelle
+                        cnv_prev = tk.Canvas(info_container, highlightthickness=0)
+                        frm_prev = ttk.Frame(cnv_prev)
+                        vsb_prev = ttk.Scrollbar(info_container, orient="vertical", command=cnv_prev.yview)
+                        hsb_prev = ttk.Scrollbar(info_container, orient="horizontal", command=cnv_prev.xview)
+                        cnv_prev.configure(yscrollcommand=vsb_prev.set, xscrollcommand=hsb_prev.set)
+                        # Position: zeile 2+3*idx_prev
+                        row_base = 2 + idx_prev * 3
+                        cnv_prev.grid(row=row_base, column=0, sticky="nsew")
+                        vsb_prev.grid(row=row_base, column=1, sticky="ns")
+                        hsb_prev.grid(row=row_base + 1, column=0, sticky="ew")
+                        info_container.rowconfigure(row_base, weight=1)
+                        info_container.columnconfigure(0, weight=1)
+                        cnv_prev.create_window((0, 0), window=frm_prev, anchor="nw")
+                        def on_cfg(event, cnv=cnv_prev):
+                            cnv.configure(scrollregion=cnv.bbox("all"))
+                        frm_prev.bind("<Configure>", on_cfg)
+                        # Tabellenraster aufbauen
+                        # Headerzeile
+                        for ci, h in enumerate(headers_prev):
+                            lbl_h = tk.Label(frm_prev, text=h, bd=1, relief="solid", padx=2, pady=1)
+                            lbl_h.grid(row=0, column=ci, sticky="nsew", padx=1, pady=1)
+                            frm_prev.columnconfigure(ci, weight=1)
+                        for ri, row_vals in enumerate(rows_prev):
+                            row_list = list(row_vals) + ["" for _ in range(len(headers_prev) - len(row_vals))]
+                            for ci, val in enumerate(row_list[:len(headers_prev)]):
+                                bg = TABLE_BG_COLOR if (ri % 2 == 0) else ENTRY_BG_COLOR
+                                fg = GUI_FG_COLOR if GUI_FG_COLOR else "black"
+                                is_link = False
+                                if isinstance(val, str) and (val.startswith("http://") or val.startswith("https://") or val.startswith("www.")):
+                                    fg = "blue"
+                                    is_link = True
+                                lbl_cell = tk.Label(frm_prev, text=val, bg=bg, fg=fg, anchor="w", padx=2, pady=1)
+                                if is_link:
+                                    try:
+                                        font = (lbl_cell.cget("font"), 0, "underline")
+                                        lbl_cell.configure(font=font, cursor="hand2")
+                                    except Exception:
+                                        lbl_cell.configure(cursor="hand2")
+                                    def _open(event=None, url=val):
+                                        url_link = url
+                                        if url_link.startswith("www."):
+                                            url_link = "https://" + url_link
+                                        try:
+                                            webbrowser.open(url_link)
+                                        except Exception:
+                                            pass
+                                    lbl_cell.bind("<Button-1>", _open)
+                                lbl_cell.grid(row=ri + 1, column=ci, sticky="nsew", padx=1, pady=1)
+                        if widths_prev:
+                            for idx_w, wid in enumerate(widths_prev):
+                                try:
+                                    frm_prev.grid_columnconfigure(idx_w, minsize=int(wid))
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+            # Ende display_previous_tables
+
             def sort_table(col: str) -> None:
                 """Sortiere die Tabellenzeilen anhand der angegebenen Spalte."""
                 nonlocal table_tree, table_sort_state
@@ -6001,24 +6163,9 @@ def launch_gui(path: Path) -> None:
             def create_table():
                 """Fordert Spalten‑ und Zeilenzahl ab und erstellt den Treeview."""
                 nonlocal table_tree, table_headers, table_frame
-                # Wenn bereits eine Tabelle existiert, speichere diese für spätere Mehrfach‑Tabellen
+                # Wenn bereits eine Tabelle existiert, verwerfe sie und erstelle eine neue
                 if table_headers:
-                    try:
-                        # Extrahiere Zeilen und Spaltenbreiten der aktuellen Tabelle
-                        if table_tree:
-                            widths_saved: list[int] = []
-                            for h_prev in table_headers:
-                                try:
-                                    widths_saved.append(int(table_tree.column(h_prev, width=None)))
-                                except Exception:
-                                    widths_saved.append(100)
-                            rows_saved: list[list[str]] = []
-                            for iid_prev in table_tree.get_children(""):
-                                rows_saved.append([table_tree.set(iid_prev, h_prev2) for h_prev2 in table_headers])
-                            previous_tables.append({"headers": list(table_headers), "rows": rows_saved, "widths": widths_saved})
-                    except Exception:
-                        pass
-                    # Alte Tabelle zurücksetzen
+                    # Alte Tabelle zurücksetzen (keine Speicherung mehrerer Tabellen)
                     table_headers[:] = []
                     for child in table_frame.winfo_children():
                         child.destroy()
@@ -6078,6 +6225,21 @@ def launch_gui(path: Path) -> None:
                 tv.grid(row=0, column=0, sticky="nsew")
                 sb_y.grid(row=0, column=1, sticky="ns")
                 sb_x.grid(row=1, column=0, sticky="ew")
+                # Ermögliche das Scrollen per Mausrad innerhalb der Tabelle.  Wir binden
+                # die Mausrad‑Ereignisse global, sobald der Mauszeiger in die Tabelle
+                # hineinläuft, und lösen die Bindings wieder, wenn die Tabelle verlassen
+                # wird. Dadurch kann auch dann gescrollt werden, wenn der Zeiger nicht
+                # direkt über der Scrollleiste schwebt.
+                def _bind_to_mousewheel(_event, tree=tv):
+                    tree.bind_all("<MouseWheel>", lambda ev, t=tree: t.yview_scroll(int(-1 * (ev.delta / 120)), "units"))
+                    tree.bind_all("<Button-4>", lambda ev, t=tree: t.yview_scroll(-1, "units"))
+                    tree.bind_all("<Button-5>", lambda ev, t=tree: t.yview_scroll(1, "units"))
+                def _unbind_from_mousewheel(_event, tree=tv):
+                    tree.unbind_all("<MouseWheel>")
+                    tree.unbind_all("<Button-4>")
+                    tree.unbind_all("<Button-5>")
+                tv.bind("<Enter>", _bind_to_mousewheel)
+                tv.bind("<Leave>", _unbind_from_mousewheel)
                 # Füge dünne Gitterlinien hinzu, um eine klare Tabellenstruktur zu schaffen.
                 try:
                     add_grid_to_treeview(tv)
@@ -6093,6 +6255,7 @@ def launch_gui(path: Path) -> None:
                 tv.bind("<Double-1>", edit_cell)
                 tv.bind("<Button-3>", on_right_click)
                 table_tree = tv
+                # Mehrfach-Tabellen werden nicht mehr unterstützt, daher keine Anzeige weiterer Tabellen
 
             def edit_columns():
                 """
@@ -6187,6 +6350,21 @@ def launch_gui(path: Path) -> None:
                     sb_x_n = ttk.Scrollbar(table_frame, orient="horizontal", command=tv_new.xview)
                     tv_new.configure(yscrollcommand=sb_y_n.set, xscrollcommand=sb_x_n.set)
                     tv_new.grid(row=0, column=0, sticky="nsew")
+                    # Ermögliche Scrollen per Mausrad in der Tabelle.  Wir binden die
+                    # Mausrad‑Ereignisse global, sobald der Mauszeiger die Tabelle betritt,
+                    # und entfernen sie beim Verlassen. Dadurch kann auch über den
+                    # Tabellenbereich hinaus gescrollt werden, ohne den Scrollbalken zu
+                    # benutzen.
+                    def _bind_to_mousewheel_new(_event, tree=tv_new):
+                        tree.bind_all("<MouseWheel>", lambda ev, t=tree: t.yview_scroll(int(-1 * (ev.delta / 120)), "units"))
+                        tree.bind_all("<Button-4>", lambda ev, t=tree: t.yview_scroll(-1, "units"))
+                        tree.bind_all("<Button-5>", lambda ev, t=tree: t.yview_scroll(1, "units"))
+                    def _unbind_from_mousewheel_new(_event, tree=tv_new):
+                        tree.unbind_all("<MouseWheel>")
+                        tree.unbind_all("<Button-4>")
+                        tree.unbind_all("<Button-5>")
+                    tv_new.bind("<Enter>", _bind_to_mousewheel_new)
+                    tv_new.bind("<Leave>", _unbind_from_mousewheel_new)
                     sb_y_n.grid(row=0, column=1, sticky="ns")
                     sb_x_n.grid(row=1, column=0, sticky="ew")
                     # Gitterlinien hinzufügen, damit Spalten‑ und Zeilenraster sichtbar sind
@@ -6290,6 +6468,7 @@ def launch_gui(path: Path) -> None:
                     table_btn_frame.grid(row=1, column=0, sticky="w", pady=4)
                     # Der Info-Container soll die Tabelle nach oben wachsen lassen
                     info_container.rowconfigure(0, weight=1)
+                    # Mehrfach-Tabellen werden nicht mehr unterstützt; es gibt nur eine Tabelle
                 else:
                     # Textansicht anzeigen und Buttons ausblenden
                     text_frame.grid(row=0, column=0, sticky="nsew")
@@ -6362,12 +6541,8 @@ def launch_gui(path: Path) -> None:
                                 except Exception:
                                     widths_list2.append(100)
                             table_data["widths"] = widths_list2
-                        # Unterstütze Mehrfach-Tabellen beim Speichern
-                        if previous_tables:
-                            table_list_all = list(previous_tables) + [table_data]
-                            new_info = _j.dumps({"__multi_table__": table_list_all}, ensure_ascii=False)
-                        else:
-                            new_info = _j.dumps({"__table__": table_data}, ensure_ascii=False)
+                        # Speichere immer als einzelne Tabelle
+                        new_info = _j.dumps({"__table__": table_data}, ensure_ascii=False)
                     except Exception:
                         new_info = e.info
                 else:
@@ -6446,8 +6621,7 @@ def launch_gui(path: Path) -> None:
                     if "__multi_table__" in parsed:
                         tbl_list = parsed.get("__multi_table__", [])
                         if isinstance(tbl_list, list) and tbl_list:
-                            # Alle bis auf die letzte Tabelle in previous_tables übernehmen
-                            previous_tables.extend(tbl_list[:-1])
+                            # Es wird nur die letzte Tabelle als aktueller Datensatz verwendet
                             table_data_default = tbl_list[-1]
                             if isinstance(table_data_default, dict) and "headers" in table_data_default and "rows" in table_data_default:
                                 is_table_default = True
@@ -6577,23 +6751,9 @@ def launch_gui(path: Path) -> None:
                         menu.grab_release()
             def create_table():
                 nonlocal table_tree, table_headers, table_frame, previous_tables
-                # Wenn bereits eine Tabelle vorhanden ist, speichere sie in previous_tables, bevor eine neue erstellt wird
+                # Wenn bereits eine Tabelle vorhanden ist, verwerfe sie und erstelle eine neue
                 if table_headers:
-                    try:
-                        if table_tree:
-                            widths_saved2: list[int] = []
-                            for h_prev3 in table_headers:
-                                try:
-                                    widths_saved2.append(int(table_tree.column(h_prev3, width=None)))
-                                except Exception:
-                                    widths_saved2.append(100)
-                            rows_saved2: list[list[str]] = []
-                            for iid_prev3 in table_tree.get_children(""):
-                                rows_saved2.append([table_tree.set(iid_prev3, h_prev4) for h_prev4 in table_headers])
-                            previous_tables.append({"headers": list(table_headers), "rows": rows_saved2, "widths": widths_saved2})
-                    except Exception:
-                        pass
-                    # Reset alte Tabelle
+                    # Reset alte Tabelle (keine Speicherung mehrerer Tabellen)
                     table_headers[:] = []
                     for child in table_frame.winfo_children():
                         child.destroy()
@@ -6648,6 +6808,21 @@ def launch_gui(path: Path) -> None:
                 tv2.grid(row=0, column=0, sticky="nsew")
                 sb_y2.grid(row=0, column=1, sticky="ns")
                 sb_x2.grid(row=1, column=0, sticky="ew")
+                # Ermögliche Scrollen per Mausrad in der neuen Tabelle.  Binde die
+                # Mausrad‑Ereignisse global beim Betreten der Tabelle und hebe die
+                # Bindings beim Verlassen wieder auf.  Dadurch reagiert die Tabelle
+                # auch auf das Mausrad, wenn der Zeiger nicht exakt über dem
+                # Scrollbalken steht.
+                def _bind_to_mousewheel_tv2(_event, tree=tv2):
+                    tree.bind_all("<MouseWheel>", lambda ev, t=tree: t.yview_scroll(int(-1 * (ev.delta / 120)), "units"))
+                    tree.bind_all("<Button-4>", lambda ev, t=tree: t.yview_scroll(-1, "units"))
+                    tree.bind_all("<Button-5>", lambda ev, t=tree: t.yview_scroll(1, "units"))
+                def _unbind_from_mousewheel_tv2(_event, tree=tv2):
+                    tree.unbind_all("<MouseWheel>")
+                    tree.unbind_all("<Button-4>")
+                    tree.unbind_all("<Button-5>")
+                tv2.bind("<Enter>", _bind_to_mousewheel_tv2)
+                tv2.bind("<Leave>", _unbind_from_mousewheel_tv2)
                 # Füge Gitterlinien hinzu, um Spalten und Zeilen klar zu trennen
                 try:
                     add_grid_to_treeview(tv2)
@@ -6744,6 +6919,21 @@ def launch_gui(path: Path) -> None:
                     sb_x3 = ttk.Scrollbar(table_frame, orient="horizontal", command=tv_new2.xview)
                     tv_new2.configure(yscrollcommand=sb_y3.set, xscrollcommand=sb_x3.set)
                     tv_new2.grid(row=0, column=0, sticky="nsew")
+                    # Ermögliche Scrollen per Mausrad in der Tabelle.  Aktiviere das
+                    # globale Mausrad‑Scrolling beim Betreten der Tabelle und deaktiviere
+                    # es beim Verlassen, damit der Benutzer überall innerhalb der
+                    # Tabelle scrollen kann, ohne den Cursor auf der Scrollleiste
+                    # positionieren zu müssen.
+                    def _bind_to_mousewheel_tv_new2(_event, tree=tv_new2):
+                        tree.bind_all("<MouseWheel>", lambda ev, t=tree: t.yview_scroll(int(-1 * (ev.delta / 120)), "units"))
+                        tree.bind_all("<Button-4>", lambda ev, t=tree: t.yview_scroll(-1, "units"))
+                        tree.bind_all("<Button-5>", lambda ev, t=tree: t.yview_scroll(1, "units"))
+                    def _unbind_from_mousewheel_tv_new2(_event, tree=tv_new2):
+                        tree.unbind_all("<MouseWheel>")
+                        tree.unbind_all("<Button-4>")
+                        tree.unbind_all("<Button-5>")
+                    tv_new2.bind("<Enter>", _bind_to_mousewheel_tv_new2)
+                    tv_new2.bind("<Leave>", _unbind_from_mousewheel_tv_new2)
                     sb_y3.grid(row=0, column=1, sticky="ns")
                     sb_x3.grid(row=1, column=0, sticky="ew")
                     # Gitterlinien hinzufügen, um die Tabelle optisch klar zu strukturieren
@@ -6896,6 +7086,21 @@ def launch_gui(path: Path) -> None:
                     tv0.grid(row=0, column=0, sticky="nsew")
                     sb_y0.grid(row=0, column=1, sticky="ns")
                     sb_x0.grid(row=1, column=0, sticky="ew")
+                    # Ermögliche Scrollen per Mausrad in der initialen Tabelle.  Aktivieren
+                    # Sie die globalen Mausrad‑Ereignisse, wenn der Mauszeiger das
+                    # Tabellen‑Widget betritt, und deaktivieren Sie sie wieder beim
+                    # Verlassen.  So kann der Benutzer in der Tabelle scrollen, ohne
+                    # die Scrollleisten zu treffen.
+                    def _bind_to_mousewheel_tv0(_event, tree=tv0):
+                        tree.bind_all("<MouseWheel>", lambda ev, t=tree: t.yview_scroll(int(-1 * (ev.delta / 120)), "units"))
+                        tree.bind_all("<Button-4>", lambda ev, t=tree: t.yview_scroll(-1, "units"))
+                        tree.bind_all("<Button-5>", lambda ev, t=tree: t.yview_scroll(1, "units"))
+                    def _unbind_from_mousewheel_tv0(_event, tree=tv0):
+                        tree.unbind_all("<MouseWheel>")
+                        tree.unbind_all("<Button-4>")
+                        tree.unbind_all("<Button-5>")
+                    tv0.bind("<Enter>", _bind_to_mousewheel_tv0)
+                    tv0.bind("<Leave>", _unbind_from_mousewheel_tv0)
                     # Füge Gitterlinien hinzu, damit Zeilen und Spalten deutlich abgegrenzt sind
                     try:
                         add_grid_to_treeview(tv0)
