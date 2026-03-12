@@ -255,11 +255,11 @@ import time
 import csv  # für CSV-Export
 import threading  # für CLI‑Zwischenablagen-Löschung
 import struct
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import webbrowser  # Für klickbare Links in der GUI
 import locale  # für deutsches Datumsformat
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Callable
+from typing import Dict, Optional, Tuple, Callable, List
 
 # ====================================
 # SECTION Z — Cover-Datei Generatoren & Bild-Aufblähung (BMP/PNG/JPEG)
@@ -336,6 +336,18 @@ CLIP_CLEAR_MS = 30 * 1000               # Clipboard leeren nach 30s in GUI
 BACKUP_KEEP = 2                         # Anzahl Backup-Dateien (älteste löschen)
 BACKUPS_ENABLED = True                  # Globale Option: Backups erstellen? True/False
 SAFE_CLI_DEFAULT = False                # Standard: CLI-Erweiterungen wie Export erlaubt
+
+# -------------------------------------------------
+# Mehrere Tresore / Recent Vaults
+#
+# Diese Liste speichert die Pfade der zuletzt verwendeten Tresor‑Dateien.
+# Bei jedem Öffnen oder Erstellen eines Tresors wird der Pfad an den
+# Anfang dieser Liste gesetzt. Die Länge dieser Liste wird durch
+# RECENT_VAULTS_MAX begrenzt. Beide Werte können über die
+# Konfiguration angepasst werden. Die Liste erleichtert den
+# schnellen Wechsel zwischen mehreren Tresoren.
+RECENT_VAULTS: List[str] = []  # zuletzt verwendete Tresore (Pfadstrings)
+RECENT_VAULTS_MAX: int = 5     # Maximale Anzahl gespeicherter Tresor‑Pfade
 
 # Steganographie-Marker und Längenfeldgröße.
 # Beim Verstecken einer Datei in einer Cover-Datei werden die verschlüsselten
@@ -942,6 +954,13 @@ CONFIG_KEYS = [
     # bricht das Programm mit einem Fehler ab. Dies erzwingt die Nutzung
     # des Keyfiles.
     "REQUIRE_KEYFILE",
+
+    # Liste der zuletzt verwendeten Tresore und maximale Anzahl. Diese
+    # Einstellungen steuern die Mehrfach‑Tresor‑Funktion (siehe
+    # README). RECENT_VAULTS speichert eine Liste von Pfadstrings,
+    # RECENT_VAULTS_MAX begrenzt die Anzahl dieser Einträge.
+    "RECENT_VAULTS",
+    "RECENT_VAULTS_MAX",
 ]
 
 # Beschreibungstexte für die einzelnen Konfigurationsparameter. Diese Erklärungen
@@ -1006,6 +1025,9 @@ CONFIG_EXPLANATIONS: Dict[str, str] = {
     # Wenn dieser Parameter leer bleibt, wird die Sprache anhand der
     # System-Locale automatisch bestimmt.
     "FORCE_LANG": "Erzwingt die Sprache der Benutzeroberfläche ('de' für Deutsch, 'en' für Englisch). Leerer Wert = automatische Erkennung.",
+    # Mehrfach‑Tresore: Liste der zuletzt verwendeten Tresore und maximale Anzahl.
+    "RECENT_VAULTS": "Liste der zuletzt verwendeten Tresor‑Dateien. Dieses Feld wird automatisch beim Öffnen oder Erstellen eines Tresors aktualisiert. Mehrere Pfadnamen können als JSON‑Liste eingetragen werden, um bevorzugte Tresore im Login anzuzeigen.",
+    "RECENT_VAULTS_MAX": "Maximale Anzahl der in RECENT_VAULTS gespeicherten Tresor‑Pfade. Wenn diese Anzahl erreicht ist, werden ältere Einträge entfernt.",
 }
 
 # English translations for the configuration explanations.  See
@@ -1043,6 +1065,9 @@ CONFIG_EXPLANATIONS_EN: Dict[str, str] = {
     "DEVICE_BIND": "Enable binding the vault to the current device. If true, a device-specific hash is mixed into the KDF. Vaults cannot be opened without the original device.",
     "REQUIRE_KEYFILE": "Force the use of the key file when KEYFILE_PATH is set (True/False). If the path is set but the file does not exist, the program aborts with an error.",
     "FORCE_LANG": "Force the UI language ('de' for German, 'en' for English). Empty value = automatic detection.",
+    # Multi‑vault support: recent vaults list and maximum count
+    "RECENT_VAULTS": "List of recently used vault files. This field is automatically updated whenever a vault is opened or created. You can predefine several paths as a JSON list to show preferred vaults on the login screen.",
+    "RECENT_VAULTS_MAX": "Maximum number of vault paths stored in RECENT_VAULTS. When this limit is reached, older entries are removed.",
 }
 
 def _default_config() -> Dict[str, object]:
@@ -1222,6 +1247,35 @@ def apply_config(cfg: Dict[str, object]) -> None:
                 globals()["FORCE_LANG"] = str(value)
             except Exception:
                 globals()["FORCE_LANG"] = ""
+        elif key == "RECENT_VAULTS":
+            # Lese Liste zuletzt verwendeter Tresor‑Pfade. Akzeptiere nur Listen von Strings.
+            try:
+                if isinstance(value, list):
+                    seen = []
+                    for itm in value:
+                        s = str(itm)
+                        if s and s not in seen:
+                            seen.append(s)
+                    # Begrenzt auf RECENT_VAULTS_MAX, falls gesetzt
+                    try:
+                        maxn = int(globals().get("RECENT_VAULTS_MAX", len(seen)))
+                    except Exception:
+                        maxn = len(seen)
+                    globals()["RECENT_VAULTS"] = seen[:maxn]
+            except Exception:
+                pass
+        elif key == "RECENT_VAULTS_MAX":
+            # Setze die maximale Anzahl gespeicherter Tresore und kürze die Liste falls nötig
+            try:
+                n = int(value)
+                if n < 1:
+                    n = 1
+                globals()["RECENT_VAULTS_MAX"] = n
+                # Kürze bestehende Liste
+                if isinstance(globals().get("RECENT_VAULTS"), list):
+                    globals()["RECENT_VAULTS"] = globals()["RECENT_VAULTS"][:n]
+            except Exception:
+                pass
         elif key == "SHOW_TELEGRAM_AD":
             # Steuerung für die Anzeige der Telegram-Werbung
             try:
@@ -1327,7 +1381,8 @@ def apply_config(cfg: Dict[str, object]) -> None:
 # unterstützt mehrere Tabellen pro Eintrag. Links in Tabellen sind in allen
 # Ansichten klickbar; im Anzeigemodus werden sie blau dargestellt. Mehrere
 # Tabellen werden korrekt gespeichert und im Detailfenster untereinander angezeigt.
-PROGRAM_VERSION = "2.9.2"
+# Programmversionsnummer. Bitte bei jeder Erweiterung anheben.
+PROGRAM_VERSION = "3.0.0"
 
 # ====================================
 # SECTION B — Abhängigkeitsprüfung
@@ -1454,6 +1509,12 @@ class Entry:
     website: str
     created_at: float
     updated_at: float
+    # Erweiterte Notizen pro Eintrag. Freitext, beliebige Länge.
+    notes: str = ""
+    # Dateianhänge pro Eintrag. Jedes Element ist ein Dict mit 'filename'
+    # und 'data' (base64-codierte Bytes). Die Anhänge werden im Tresor
+    # gemeinsam mit dem Eintrag verschlüsselt gespeichert.
+    attachments: List[Dict[str, str]] = field(default_factory=list)
 
 @dataclass
 class Vault:
@@ -1485,6 +1546,153 @@ def generate_password(length: int = 20) -> str:
     """Erzeugt ein starkes Passwort mit sicheren Zufallszahlen."""
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$_-+.^*?"
     return ''.join(secrets.choice(chars) for _ in range(max(8, min(128, length))))
+
+# ---------------------------------------------------------------
+# Passphrase‑Generator
+#
+# Zusätzlich zum traditionellen Passwortgenerator bietet dieser
+# Passwortmanager die Möglichkeit, leicht merkbare Passphrasen
+# zu generieren. Eine Passphrase besteht aus mehreren zufällig
+# ausgewählten Wörtern. Laut aktuellen NIST‑Empfehlungen bieten
+# lange, aussprechbare Passphrasen eine ähnlich hohe Sicherheit wie
+# komplexe Zeichenketten und sind für Menschen leichter zu merken.
+_WORDLIST = [
+    # Eine kleine Liste von häufig verwendeten englischen Wörtern. In
+    # zukünftigen Versionen kann diese Liste erweitert oder aus einer
+    # externen Datei geladen werden. Bei der Generierung wird jedes
+    # Wort zufällig ausgewählt. Es ist wichtig, dass die Liste
+    # ausreichend groß ist, um eine hohe Entropie zu gewährleisten.
+    "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+    "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango",
+    "uniform", "victor", "whiskey", "xray", "yankee", "zulu", "sun", "moon", "star", "cloud",
+    "river", "mountain", "forest", "ocean", "desert", "sky", "earth", "stone", "metal", "wood",
+    "fire", "water", "wind", "light", "dark", "red", "green", "blue", "gold", "silver",
+    "north", "south", "east", "west", "happy", "bright", "quiet", "loud", "swift", "calm",
+    "strong", "wise", "kind", "brave", "honest", "clever", "lucky", "gentle", "bold", "sincere",
+    "rapid", "steady", "silent", "quick", "eager", "fierce", "proud", "trust", "hope", "dream"
+]
+
+def generate_passphrase(num_words: int = 4) -> str:
+    """
+    Generiert eine zufällige Passphrase bestehend aus ``num_words`` Wörtern.
+
+    Eine Passphrase ist typischerweise länger als ein Passwort, aber durch
+    die Verwendung von Wörtern leichter zu merken. Die Funktion wählt
+    jedes Wort zufällig aus einer internen Liste aus.  ``num_words``
+    wird auf einen sinnvollen Bereich beschränkt (2–10), um die Lesbarkeit
+    sicherzustellen.  Wenn die Wortliste erweitert wird, steigt die
+    Entropie entsprechend.
+
+    :param num_words: Anzahl der Wörter in der Passphrase (Standard: 4)
+    :return: Die generierte Passphrase als Zeichenkette
+    """
+    # Begrenze die Anzahl der Wörter auf mindestens 2 und höchstens 10
+    n = max(2, min(10, int(num_words))) if isinstance(num_words, int) else 4
+    return ' '.join(secrets.choice(_WORDLIST) for _ in range(n))
+
+# -------------------------------------------------------------
+# Zusatzfunktionen für Sicherheitsprüfungen und Multi‑Vaults
+# -------------------------------------------------------------
+
+def check_password_weakness(vault: "Vault") -> Tuple[int, List[str], List[str]]:
+    """
+    Scannt alle Einträge eines Tresors nach möglichen Schwachstellen /
+    Scans all entries in a vault for potential weaknesses.
+
+    Diese Funktion ermittelt drei Kennzahlen:
+
+    * Anzahl sehr schwacher Passwörter (Stärke < 40 Punkte)
+    * Liste der Labels von Einträgen mit schwachen Passwörtern
+    * Liste der Labels von Einträgen, deren Passwörter mehrfach vorkommen
+
+    Für die Schwachstellenanalyse wird die vorhandene Funktion
+    ``password_strength`` verwendet. Doppelte Passwörter werden über eine
+    einfache Häufigkeitsanalyse identifiziert.
+
+    The function returns three values:
+
+    * Number of very weak passwords (strength < 40 points)
+    * List of labels of entries with weak passwords
+    * List of labels of entries whose passwords occur more than once
+
+    It relies on the existing ``password_strength`` function for the
+    strength calculation and uses a simple frequency analysis to detect
+    duplicates.
+
+    :param vault: Das zu untersuchende Vault‑Objekt / the vault object to analyse
+    :return: Tuple(schwache_passwörter_count, schwache_labels, duplizierte_labels)
+    """
+    weak_labels: List[str] = []
+    pw_map: Dict[str, List[str]] = {}
+    # Durchlaufe alle gespeicherten Einträge
+    for entry in vault.entries.values():
+        pw = entry.password or ""
+        # Stärke analysieren
+        try:
+            _cat, score = password_strength(pw)
+        except Exception:
+            score = 100
+        if score < 40:
+            weak_labels.append(entry.label)
+        # Häufigkeit pro Passwort merken
+        pw_map.setdefault(pw, []).append(entry.label)
+    # Alle Passwörter, die mehr als einmal vorkommen, herausfiltern
+    duplicate_labels: List[str] = []
+    for labels in pw_map.values():
+        if len(labels) > 1:
+            duplicate_labels.extend(labels)
+    return len(weak_labels), weak_labels, duplicate_labels
+
+
+def update_recent_vaults(path_str: str) -> None:
+    """
+    Fügt den übergebenen Tresor‑Pfad an den Anfang der Liste ``RECENT_VAULTS`` an / 
+    Appends the given vault path to the beginning of the ``RECENT_VAULTS`` list and
+    writes the updated list to the configuration file (if available).
+
+    Die Liste wird duplikatsfrei gehalten und auf ``RECENT_VAULTS_MAX`` Elemente
+    begrenzt. Für das Speichern wird versucht, die aktive Konfiguration zu laden
+    (``ACTIVE_CONFIG_PATH``); existiert keine aktive Konfiguration, wird die
+    Standardkonfiguration im Programmpfad verwendet. Fehler beim Laden oder
+    Speichern werden still ignoriert.
+
+    The list is kept free of duplicates and limited to ``RECENT_VAULTS_MAX``
+    entries. When writing, the function attempts to load the active
+    configuration (``ACTIVE_CONFIG_PATH``); if none exists, the default
+    configuration in the program directory is used. Any errors during loading
+    or saving are silently ignored.
+
+    :param path_str: Absoluter Dateipfad des geöffneten oder neu erstellten Tresors / absolute file path of the opened or newly created vault
+    """
+    try:
+        if not path_str:
+            return
+        # Entferne vorhandene Vorkommen und füge Pfad vorn ein
+        if path_str in RECENT_VAULTS:
+            RECENT_VAULTS.remove(path_str)
+        RECENT_VAULTS.insert(0, path_str)
+        # Auf maximale Länge begrenzen
+        if len(RECENT_VAULTS) > RECENT_VAULTS_MAX:
+            del RECENT_VAULTS[RECENT_VAULTS_MAX:]
+        # Versuche, bestehende Konfiguration zu laden oder neu zu erstellen
+        cfg_path: Optional[Path] = globals().get("ACTIVE_CONFIG_PATH")
+        cfg: Dict[str, object]
+        if cfg_path:
+            cfg = load_config_file(Path(cfg_path))
+        else:
+            # Standardpfad: config.json im Ausführungsverzeichnis
+            try:
+                cfg_path = exe_dir() / DEFAULT_CONFIG_FILENAME
+            except Exception:
+                cfg_path = Path(DEFAULT_CONFIG_FILENAME)
+            cfg = load_config_file(Path(cfg_path))
+        # Aktualisiere die Liste in der Konfiguration
+        cfg["RECENT_VAULTS"] = list(RECENT_VAULTS)
+        # Schreibe die Konfiguration zurück mit Kommentaren
+        write_config_with_comments(Path(cfg_path), cfg)
+    except Exception:
+        # Fehler beim Aktualisieren der Liste oder beim Schreiben ignorieren
+        pass
 
 # Neue Kurz-ID-Generation für Einträge
 def generate_entry_id(existing: Dict[str, Entry]) -> str:
@@ -2976,6 +3184,8 @@ def load_vault(path: Path, master_pw_str: str) -> Vault:
     v.created_at = obj.get("meta", {}).get("created_at", time.time())
     v.updated_at = obj.get("meta", {}).get("updated_at", time.time())
     for eid, ed in obj.get("entries", {}).items():
+        # Extrahiere optionale Felder wie Notizen und Anhänge. Ältere Tresore
+        # enthalten diese Felder möglicherweise nicht; verwende Standardwerte.
         e = Entry(
             id=eid,
             label=ed.get("label", ""),
@@ -2984,6 +3194,8 @@ def load_vault(path: Path, master_pw_str: str) -> Vault:
             password=ed.get("password", ""),
             info=ed.get("info", ""),
             website=ed.get("website", ""),
+            notes=ed.get("notes", ""),
+            attachments=ed.get("attachments", []) if isinstance(ed.get("attachments", []), list) else [],
             created_at=ed.get("created_at", time.time()),
             updated_at=ed.get("updated_at", time.time())
         )
@@ -4516,23 +4728,54 @@ def launch_gui(path: Path) -> None:
             def on_canvas_resize(event):
                 canvas.itemconfig(canvas_window, width=event.width)
             canvas.bind("<Configure>", on_canvas_resize)
-            # Mausrad für vertikales Scrollen binden
-            def _on_mousewheel(event):
-                # Windows/Mac: event.delta, Linux: event.num
-                if hasattr(event, "delta"):
-                    if event.delta > 0:
-                        canvas.yview_scroll(-1, "units")
-                    elif event.delta < 0:
-                        canvas.yview_scroll(1, "units")
+            # Mausrad für vertikales Scrollen im Login‑Canvas binden
+            def _on_mousewheel(event) -> str:
+                """Behandelt das Mausrad (MouseWheel/Buttons 4/5) für den Login‑Canvas.
+
+                Diese Funktion wandelt das delta‑Attribut (bei Windows/macOS) oder die
+                Button‑Nummer (bei Linux/X11) in einen Scrollbefehl um. Durch die
+                Rückgabe von "break" wird verhindert, dass andere Widgets das Event
+                noch verarbeiten.
+                """
+                # Windows/Mac senden event.delta, Linux sendet Button‑4/5
+                if hasattr(event, "delta") and event.delta:
+                    canvas.yview_scroll(int(-1 * (event.delta / abs(event.delta))), "units")
                 else:
-                    if event.num == 4:
+                    if getattr(event, "num", 0) == 4:
                         canvas.yview_scroll(-1, "units")
-                    elif event.num == 5:
+                    elif getattr(event, "num", 0) == 5:
                         canvas.yview_scroll(1, "units")
-            # Binde global an Canvas
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
-            canvas.bind_all("<Button-4>", _on_mousewheel)
-            canvas.bind_all("<Button-5>", _on_mousewheel)
+                return "break"
+
+            # Um das Scrollen überall im Login‑Fenster zu ermöglichen, binden wir die
+            # Mausereignisse nur, solange sich der Zeiger auf dem Canvas befindet. / 
+            # To allow scrolling everywhere in the login window, we bind the mouse
+            # events only while the pointer is over the canvas. When the pointer
+            # leaves the canvas, the bindings are removed to avoid interfering with
+            # other parts of the application. This pattern entspricht dem Scroll
+            # Verhalten der Tabellenansicht und funktioniert zuverlässig auf allen
+            # Plattformen.
+            def _bind_canvas_mousewheel(_event):
+                # Binde Maus‑Rad‑Events an den Canvas, wenn der Zeiger den Canvas betritt
+                try:
+                    canvas.bind_all("<MouseWheel>", _on_mousewheel)
+                    canvas.bind_all("<Button-4>", _on_mousewheel)
+                    canvas.bind_all("<Button-5>", _on_mousewheel)
+                except Exception:
+                    pass
+
+            def _unbind_canvas_mousewheel(_event):
+                # Entferne globale Bindings, wenn der Zeiger den Canvas verlässt
+                try:
+                    canvas.unbind_all("<MouseWheel>")
+                    canvas.unbind_all("<Button-4>")
+                    canvas.unbind_all("<Button-5>")
+                except Exception:
+                    pass
+
+            # Registriere Bindings für das Betreten/Verlassen des Canvas
+            canvas.bind("<Enter>", _bind_canvas_mousewheel)
+            canvas.bind("<Leave>", _unbind_canvas_mousewheel)
             # Oberer Bereich: Master-Passwort und Buttons
             # Überschrift für das Master-Passwort – übersetzt je nach Sprache
             ttk.Label(frm, text=tr("Master-Passwort", "Master Password"), font=("TkDefaultFont", 14)).pack(pady=(10, 6))
@@ -4722,26 +4965,89 @@ def launch_gui(path: Path) -> None:
                 command=self.gui_do_extract
             ).grid(row=2, column=0, sticky="w", pady=(4, 6))
 
-            # Werbebereich unten: zwei Zeilen, zweiter Link ist klickbar
-            # Telegram‑Hinweis am unteren Rand des Login‑Fensters.  Die Anzeige
+            # --------------------------------------------------------------
+            # Anzeige der zuletzt verwendeten Tresore (Multi‑Vault Support)
+            # --------------------------------------------------------------
+            try:
+                if RECENT_VAULTS:
+                    recent_frame = ttk.LabelFrame(frm, text=tr("Zuletzt verwendete Tresore", "Recent vaults"), padding=8)
+                    recent_frame.pack(fill="x", pady=(6, 6))
+                    ttk.Label(recent_frame,
+                              text=tr(
+                                  "Doppelklicken Sie auf einen Eintrag, um diesen Tresor auszuwählen.",
+                                  "Double-click an entry to select this vault."
+                              ),
+                              wraplength=700,
+                              justify="left"
+                              ).pack(anchor="w", pady=(0,4))
+                    # Listbox mit den Pfaden der zuletzt verwendeten Tresore
+                    lst_recent = tk.Listbox(recent_frame, height=min(len(RECENT_VAULTS), 5))
+                    for p in RECENT_VAULTS:
+                        lst_recent.insert("end", p)
+                    lst_recent.pack(fill="x")
+                    def _on_recent_double(ev=None):
+                        try:
+                            sel = lst_recent.curselection()
+                            if sel:
+                                pth = lst_recent.get(int(sel[0]))
+                                self.path = Path(pth)
+                                # UI neu aufbauen, um den Pfad zu aktualisieren
+                                self.build_login_ui()
+                        except Exception:
+                            pass
+                    lst_recent.bind("<Double-Button-1>", _on_recent_double)
+            except Exception:
+                pass
+
+            # --------------------------------------------------------------
+            # Sicherheitsanalyse und Breach‑Check (lokale Prüfung)
+            # --------------------------------------------------------------
+            try:
+                breach_frame = ttk.LabelFrame(frm, text=tr("Sicherheitsanalyse", "Security analysis"), padding=8)
+                breach_frame.pack(fill="x", pady=(6, 6))
+                # Informationstext zur Sicherheitsanalyse.  Er erklärt den Zweck der lokalen
+                # Schwachstellen‑Analyse und weist darauf hin, dass die herunterladbare
+                # Hash‑Liste sehr groß ist (ca. 11 GB komprimiert, 25 GB entpackt).  Die
+                # englische Version vermittelt die gleichen Informationen.
+                ttk.Label(
+                    breach_frame,
+                    text=tr(
+                        "Überprüfen Sie Ihren Tresor auf schwache oder doppelt genutzte Passwörter. "
+                        "Die Analyse erfolgt vollständig lokal und Ihre Daten werden nicht ins Internet übertragen.\n\n"
+                        "Für den Abgleich mit geleakten Passwörtern können Sie optional eine Hash‑Liste von haveibeenpwned.com herunterladen.\n"
+                        "Beachten Sie bitte, dass diese Liste sehr groß ist: die kleinste Version ist etwa 11 GB (komprimiert) und entpackt rund 25 GB groß.",
+                        "Check your vault for weak or reused passwords. The analysis is performed entirely locally and your data is never sent to the internet.\n\n"
+                        "To compare against leaked passwords you can optionally download a hash list from haveibeenpwned.com.\n"
+                        "Please note that this list is very large: the smallest version is about 11 GB compressed and expands to around 25 GB."
+                    ),
+                    wraplength=700,
+                    justify="left"
+                ).pack(anchor="w")
+                btn_breach = ttk.Frame(breach_frame)
+                btn_breach.pack(anchor="w", pady=(4,0))
+                ttk.Button(btn_breach, text=tr("Tresor prüfen", "Check vault"), command=self.gui_check_weakness).pack(side="left", padx=2)
+                ttk.Button(btn_breach, text=tr("Offline-Liste herunterladen", "Download offline list"), command=self.gui_download_breach_list).pack(side="left", padx=2)
+            except Exception:
+                pass
+
+            # Werbebereich unten: zwei Zeilen, zweiter Link ist klickbar.  Der Telegram‑Hinweis
+            # wird nun innerhalb des Scrollbereichs (frm) erstellt, sodass er mit
+            # gescrollt wird und das Mausrad überall auf der Seite funktioniert.  Die Anzeige
             # erfolgt nur, wenn SHOW_TELEGRAM_AD aktiv ist.  Der Link öffnet
             # TELEGRAM_TARGET, nicht nur den angezeigten Text.
             if SHOW_TELEGRAM_AD:
-                adv_frame = ttk.Frame(self.root, padding=(6, 4))
+                adv_frame = ttk.Frame(frm, padding=(6, 4))
                 adv_frame.pack(fill="x")
                 # Werbetext im unteren Bereich des Login-Fensters; der Zeilenumbruch
                 # (wraplength) sorgt dafür, dass der gesamte Text bei schmaler
                 # Fensterbreite sichtbar bleibt.
-                # Werbetext übersetzen: deutsch und englisch
                 adv_msg = ttk.Label(adv_frame, text=tr(TELEGRAM_MESSAGE, "Check out my Telegram channel:"), wraplength=500)
                 adv_msg.pack(anchor="w")
                 link_lbl = ttk.Label(adv_frame, text=TELEGRAM_LINK, foreground="blue", cursor="hand2")
                 link_lbl.pack(anchor="w")
                 # Klick öffnet den Link mit Protokoll; falls User vollen Link angegeben hat, ergänze ggf. https://
                 def _open_link(event=None):
-                    # Öffne den hinterlegten Telegram-Link (TELEGRAM_TARGET), nicht nur den sichtbaren Text.
                     url = TELEGRAM_TARGET
-                    # Ergänze https://, falls nicht vorhanden (obwohl die Ziel-URL bereits mit https beginnt)
                     if not url.startswith("http://") and not url.startswith("https://"):
                         url = "https://" + url
                     try:
@@ -4822,8 +5128,14 @@ def launch_gui(path: Path) -> None:
                 return vlt
             # Callback bei Erfolg
             def on_create_success(vlt: Vault):
+                # Tresor und Master‑Passwort setzen
                 self.vault = vlt
                 self.master_pw = pw1
+                # Aktualisiere Liste der zuletzt verwendeten Tresore
+                try:
+                    update_recent_vaults(str(self.path))
+                except Exception:
+                    pass
                 messagebox.showinfo(tr("Fertig", "Done"), tr("Leerer Tresor erstellt.", "Empty vault created."), parent=self.root)
                 self.build_main_ui()
             # Callback bei Fehler
@@ -4869,6 +5181,11 @@ def launch_gui(path: Path) -> None:
                 maybe_warn_rotation_gui(self.vault)
                 # Aktivitätszeit zurücksetzen und Hauptansicht aufbauen
                 self.last_activity = time.time()
+                # Aktualisiere Liste der zuletzt verwendeten Tresore
+                try:
+                    update_recent_vaults(str(self.path))
+                except Exception:
+                    pass
                 self.build_main_ui()
 
             # Callback bei Fehler
@@ -5789,45 +6106,98 @@ def launch_gui(path: Path) -> None:
                 info_frame.rowconfigure(0, weight=1)
                 info_frame.columnconfigure(0, weight=1)
 
+            # Anzeige optionaler Notizen und Anhänge unterhalb der Info
+            notes_row = info_row_idx + 1
+            attachments_row = info_row_idx + 2
+            created_row = info_row_idx + 3
+            modified_row = info_row_idx + 4
+            close_row = info_row_idx + 5
+            # Notizen anzeigen
+            if getattr(e, "notes", ""):
+                try:
+                    ttk.Label(frm, text=tr("Notizen:", "Notes:")).grid(row=notes_row, column=0, sticky="nw", pady=(8,2))
+                    notes_frame2 = ttk.Frame(frm)
+                    notes_frame2.grid(row=notes_row, column=1, columnspan=3, sticky="nsew", pady=(8,2))
+                    notes_frame2.rowconfigure(0, weight=1)
+                    notes_frame2.columnconfigure(0, weight=1)
+                    txt_notes_view = tk.Text(notes_frame2, height=4, wrap="word")
+                    try:
+                        txt_notes_view.configure(background=ENTRY_BG_COLOR)
+                    except Exception:
+                        pass
+                    txt_notes_view.insert("1.0", getattr(e, "notes", ""))
+                    txt_notes_view.configure(state="disabled")
+                    scr_notes = ttk.Scrollbar(notes_frame2, orient="vertical", command=txt_notes_view.yview)
+                    txt_notes_view.configure(yscrollcommand=scr_notes.set)
+                    txt_notes_view.grid(row=0, column=0, sticky="nsew")
+                    scr_notes.grid(row=0, column=1, sticky="ns")
+                    frm.rowconfigure(notes_row, weight=1)
+                except Exception:
+                    pass
+            # Anhänge anzeigen
+            if getattr(e, "attachments", None):
+                try:
+                    ttk.Label(frm, text=tr("Anhänge:", "Attachments:")).grid(row=attachments_row, column=0, sticky="nw", pady=(8,2))
+                    attach_frame2 = ttk.Frame(frm)
+                    attach_frame2.grid(row=attachments_row, column=1, columnspan=3, sticky="nsew", pady=(8,2))
+                    attach_frame2.columnconfigure(0, weight=1)
+                    list_attach_view = tk.Listbox(attach_frame2, height=min(len(e.attachments), 4))
+                    for att in e.attachments:
+                        try:
+                            list_attach_view.insert("end", att.get("filename", ""))
+                        except Exception:
+                            list_attach_view.insert("end", "")
+                    list_attach_view.grid(row=0, column=0, sticky="nsew")
+                    scr_attach = ttk.Scrollbar(attach_frame2, orient="vertical", command=list_attach_view.yview)
+                    list_attach_view.configure(yscrollcommand=scr_attach.set)
+                    scr_attach.grid(row=0, column=1, sticky="ns")
+                    # Button zum Speichern des ausgewählten Anhangs
+                    def _save_selected_attachment(_ev=None):
+                        sel = list_attach_view.curselection()
+                        if not sel:
+                            return
+                        idx = int(sel[0])
+                        try:
+                            att = e.attachments[idx]
+                            import base64
+                            data_bytes = base64.b64decode(att.get("data", ""))
+                            fname_default = att.get("filename", "attachment.bin")
+                            out_path = filedialog.asksaveasfilename(parent=top, title=tr("Anhang speichern", "Save attachment"), initialfile=fname_default)
+                            if out_path:
+                                with open(out_path, "wb") as fo:
+                                    fo.write(data_bytes)
+                                messagebox.showinfo(tr("Gespeichert", "Saved"), tr("Datei gespeichert.", "File saved."), parent=top)
+                        except Exception as ex:
+                            messagebox.showerror(tr("Fehler", "Error"), tr("Speichern fehlgeschlagen:", "Save failed:") + f"\n{ex}", parent=top)
+                    # Doppelklick zum Speichern
+                    list_attach_view.bind("<Double-Button-1>", _save_selected_attachment)
+                    ttk.Button(attach_frame2, text=tr("Speichern", "Save"), command=_save_selected_attachment).grid(row=1, column=0, sticky="w", pady=(4,0))
+                    frm.rowconfigure(attachments_row, weight=1)
+                except Exception:
+                    pass
             # Zeiten im deutschen Format, falls fmt_de existiert
-
             try:
-
                 created_str = fmt_de(e.created_at); updated_str = fmt_de(e.updated_at)
-
             except Exception:
-
                 created_str = time.strftime("%d.%m.%Y %H:%M:%S", time.localtime(e.created_at))
-
                 updated_str = time.strftime("%d.%m.%Y %H:%M:%S", time.localtime(e.updated_at))
-
-            ttk.Label(frm, text=tr("Erstellt:", "Created:")).grid(row=info_row_idx+1, column=0, sticky="w", pady=(8,2))
-
-            ttk.Label(frm, text=created_str).grid(row=info_row_idx+1, column=1, sticky="w", pady=(8,2), padx=(4,0))
-
-            ttk.Label(frm, text=tr("Geändert:", "Modified:")).grid(row=info_row_idx+2, column=0, sticky="w", pady=2)
-
-            ttk.Label(frm, text=updated_str).grid(row=info_row_idx+2, column=1, sticky="w", pady=2, padx=(4,0))
-
+            ttk.Label(frm, text=tr("Erstellt:", "Created:")).grid(row=created_row, column=0, sticky="w", pady=(8,2))
+            ttk.Label(frm, text=created_str).grid(row=created_row, column=1, sticky="w", pady=(8,2), padx=(4,0))
+            ttk.Label(frm, text=tr("Geändert:", "Modified:")).grid(row=modified_row, column=0, sticky="w", pady=2)
+            ttk.Label(frm, text=updated_str).grid(row=modified_row, column=1, sticky="w", pady=2, padx=(4,0))
             btnf = ttk.Frame(frm)
-
-            btnf.grid(row=info_row_idx+3, column=1, columnspan=3, sticky="e", pady=8)
-
+            btnf.grid(row=close_row, column=1, columnspan=3, sticky="e", pady=8)
             ttk.Button(btnf, text=tr("Schließen", "Close"), command=top.destroy).pack(side="right", padx=4)
-
             def _on_close():
-
                 _cancel_timer()
-
                 top.destroy()
-
             top.protocol("WM_DELETE_WINDOW", _on_close)
 
 
         def gui_add(self):
             self.touch()
             # Arbeiterfunktion, die den Eintrag erstellt und den Tresor speichert
-            def do_add_work(label: str, username: str, email: str, website: str, info: str, pw_val: str) -> None:
+            def do_add_work(label: str, username: str, email: str, website: str, info: str, notes: str, attachments: list, pw_val: str) -> None:
                 eid = generate_entry_id(self.vault.entries)
                 ts = time.time()
                 e = Entry(
@@ -5838,6 +6208,8 @@ def launch_gui(path: Path) -> None:
                     password=pw_val,
                     info=info,
                     website=website,
+                    notes=notes,
+                    attachments=attachments,
                     created_at=ts,
                     updated_at=ts,
                 )
@@ -5900,12 +6272,22 @@ def launch_gui(path: Path) -> None:
                 else:
                     info = txt_info.get("1.0", "end").strip()
                 website = ent_web.get().strip()
+                # Zusätzliche Felder: Notizen und Anhänge
+                try:
+                    notes_val = txt_notes.get("1.0", "end").strip()
+                except Exception:
+                    notes_val = ""
+                # Kopiere Anhänge, um Modifikationen nach dem Start der Hintergrundoperation zu vermeiden
+                try:
+                    attachments_copy = list(attachments_list)
+                except Exception:
+                    attachments_copy = []
                 # Startet den Fortschrittsdialog
                 self.run_with_progress(
                     tr("Eintrag speichern", "Save entry"),
                     tr("Eintrag wird gespeichert. Bitte warten...", "Entry is being saved. Please wait..."),
                     do_add_work,
-                    args=(label, username, email, website, info, pw_val),
+                    args=(label, username, email, website, info, notes_val, attachments_copy, pw_val),
                     on_success=on_add_success,
                     on_error=on_add_error,
                 )
@@ -5920,6 +6302,10 @@ def launch_gui(path: Path) -> None:
             frm.columnconfigure(1, weight=1)
             # Die Zeile für den Info-Container ist Zeile 6; diese sollte sich mit dem Fenster ausdehnen.
             frm.rowconfigure(6, weight=1)
+            # Zusätzlich wachsen die Zeilen für Notizen (7) und Anhänge (8) mit, damit große Texte
+            # vernünftig scrollen können. Die Button-Zeile (9) bleibt fix in der Höhe.
+            frm.rowconfigure(7, weight=1)
+            frm.rowconfigure(8, weight=1)
             # Eingabefelder für Label, Benutzer, Email
             ttk.Label(frm, text=tr("Label:", "Label:")).grid(row=0, column=0, sticky="w", pady=2)
             ent_label = ttk.Entry(frm)
@@ -5938,6 +6324,14 @@ def launch_gui(path: Path) -> None:
                 ent_pw.delete(0, tk.END)
                 ent_pw.insert(0, generate_password())
             ttk.Button(frm, text=tr("Generieren", "Generate"), command=do_gen_pw_add).grid(row=3, column=2, padx=6, pady=2)
+            # Passphrase generieren: erzeugt eine leicht merkbare Passphrase
+            def do_gen_passphrase_add():
+                try:
+                    ent_pw.delete(0, tk.END)
+                    ent_pw.insert(0, generate_passphrase())
+                except Exception:
+                    pass
+            ttk.Button(frm, text=tr("Passphrase", "Passphrase"), command=do_gen_passphrase_add).grid(row=3, column=3, padx=6, pady=2)
             # Webseite/IP
             ttk.Label(frm, text=tr("Webseite/IP:", "Website/IP:")).grid(row=4, column=0, sticky="w", pady=2)
             ent_web = ttk.Entry(frm)
@@ -6085,10 +6479,20 @@ def launch_gui(path: Path) -> None:
                 table_sort_state[col] = not table_sort_state.get(col, False)
 
             def edit_cell(event):
-                """Ermögliche das Bearbeiten einer Tabellenzelle per Doppelklick."""
+                """
+                Erlaubt das Bearbeiten einer Tabellenzelle per Doppelklick. Wird der
+                Strg/Control‑Modifier gehalten und der Zellwert wie ein Hyperlink
+                interpretiert, öffnet sich der Link im Browser. Ansonsten öffnet
+                sich ein Eingabedialog. Nach Bestätigung mittels Enter/OK wird
+                automatisch die nächste Spalte derselben Zeile zum Bearbeiten
+                geöffnet, bis alle Spalten ausgefüllt sind. Schließt der Benutzer
+                den Dialog über das Schließen‑Symbol (X), erfolgt kein automatisches
+                Weiterfragen.
+                """
                 nonlocal table_tree
                 if not table_tree:
                     return
+                # Stelle sicher, dass der Klick innerhalb einer Zelle stattgefunden hat
                 region = table_tree.identify("region", event.x, event.y)
                 if region != "cell":
                     return
@@ -6097,39 +6501,142 @@ def launch_gui(path: Path) -> None:
                 if not row_id or not col_id:
                     return
                 col_idx = int(col_id.strip("#")) - 1
+                # Aktuellen Zellwert abfragen
                 current_value = table_tree.set(row_id, table_headers[col_idx])
-                # Wenn der aktuelle Zellwert wie ein Hyperlink aussieht, öffne ihn direkt
-                if current_value and isinstance(current_value, str) and (
+                # Prüfen, ob der Wert wie ein Hyperlink aussieht
+                is_link = bool(current_value and isinstance(current_value, str) and (
                     current_value.startswith("http://") or current_value.startswith("https://") or current_value.startswith("www.")
-                ):
-                    url3 = current_value
-                    # Ergänze ggf. das Protokoll für www‑Links
-                    if url3.startswith("www."):
-                        url3 = "https://" + url3
+                ))
+                # Wenn es ein Link ist und die Strg‑Taste gedrückt wird, öffne den Link
+                # direkt und beende die Bearbeitung. In Tkinter ist das Control‑Bit
+                # üblicherweise das Bit 0x0004 im state‑Bitmask.
+                if is_link and (event.state & 0x0004):
+                    url_to_open = current_value
+                    if url_to_open.startswith("www."):
+                        url_to_open = "https://" + url_to_open
                     try:
-                        webbrowser.open(url3)
+                        webbrowser.open(url_to_open)
                     except Exception:
                         pass
                     return
-                edit_win = tk.Toplevel(top)
-                edit_win.title(tr("Zelle bearbeiten", "Edit cell"))
-                ttk.Label(edit_win, text=tr("Neuer Wert:", "New value:")).pack(padx=6, pady=(6,2))
-                entry = ttk.Entry(edit_win)
-                entry.pack(padx=6, pady=(0,6), fill="x")
-                entry.insert(0, current_value)
-                entry.focus_set()
-                def commit():
-                    new_val = entry.get()
-                    table_tree.set(row_id, table_headers[col_idx], new_val)
-                    # Passe Spaltenbreiten an den neuen Inhalt an
+                # Hilfsfunktion zum Öffnen eines Editdialogs für die angegebene
+                # Zeile und Spalte
+                def show_edit_window(row_identifier: str, col_index: int) -> None:
+                    # Wenn bereits ein Editfenster existiert, bringe es nach vorne statt ein neues zu öffnen. /
+                    # If an edit window already exists, bring it to the front instead of opening a new one.
+                    # Dazu speichern wir das aktuelle Editfenster und die editierte Zelle als Attribute des edit_cell-Handlers. /
+                    # To achieve this, we store the current edit window and the edited cell as attributes of the edit_cell handler.
+                    # Wird dieselbe Zelle erneut geöffnet, fokussieren wir das vorhandene Fenster; für unterschiedliche Zellen schließen wir das alte Fenster. /
+                    # If the same cell is opened again, we focus the existing window; for different cells we close the old window.
+                    existing_win = getattr(edit_cell, "current_edit_win", None)
+                    existing_cell = getattr(edit_cell, "current_edit_cell", None)
+                    if existing_win:
+                        try:
+                            # Nur handeln, wenn das Fenster noch existiert.
+                            if existing_win.winfo_exists():
+                                if existing_cell == (row_identifier, col_index):
+                                    # Gleiches Kästchen – nur nach vorne bringen und aktivieren.
+                                    try:
+                                        existing_win.lift()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        existing_win.focus_force()
+                                    except Exception:
+                                        pass
+                                    return
+                                else:
+                                    # Anderes Kästchen – Fenster schließen, um nur eins offen zu lassen.
+                                    try:
+                                        existing_win.destroy()
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                    # Lese aktuellen Wert der Zelle
+                    cell_val = table_tree.set(row_identifier, table_headers[col_index])
+                    # Erstelle ein modales Eingabefenster
+                    edit_win = tk.Toplevel(top)
+                    # Bestimme den Spaltennamen und setze den Fenstertitel entsprechend
                     try:
-                        adjust_table_column_widths(table_tree, table_headers)
+                        col_name = table_headers[col_index] if (0 <= col_index < len(table_headers)) else ""
+                    except Exception:
+                        col_name = ""
+                    title_base = tr("Zelle bearbeiten", "Edit cell")
+                    if col_name:
+                        edit_win.title(f"{title_base}: {col_name}")
+                    else:
+                        edit_win.title(title_base)
+                    # Dynamischer Hinweistext, der die Spalte nennt
+                    try:
+                        hdr = table_headers[col_index] if (0 <= col_index < len(table_headers)) else ""
+                    except Exception:
+                        hdr = ""
+                    # Setze den Hinweistext und setze den Spaltennamen in Anführungszeichen, wenn vorhanden
+                    label_text_de = f"Neuer Wert für Spalte \"{hdr}\":" if hdr else "Neuer Wert:"
+                    label_text_en = f"New value for column \"{hdr}\":" if hdr else "New value:"
+                    ttk.Label(edit_win, text=tr(label_text_de, label_text_en)).pack(padx=6, pady=(6,2))
+                    entry = ttk.Entry(edit_win)
+                    entry.pack(padx=6, pady=(0,6), fill="x")
+                    # Vorbelegen mit aktuellem Wert
+                    entry.insert(0, cell_val)
+                    entry.focus_set()
+                    # Vergrößere das Eingabefenster, damit es dreimal so breit ist wie standardmäßig
+                    # Die Breite ist heuristisch auf 600 Pixel gesetzt, um ausreichend Platz zu bieten.
+                    try:
+                        edit_win.geometry("600x150")
                     except Exception:
                         pass
-                    edit_win.destroy()
-                # Enter bestätigt die Eingabe genau wie der OK-Button
-                entry.bind("<Return>", lambda _ev: commit())
-                ttk.Button(edit_win, text=tr("OK", "OK"), command=commit).pack(pady=(0,6))
+                    # Flag zur Kennzeichnung, dass commit ausgeführt wurde
+                    committed = {"done": False}
+                    def commit_edit() -> None:
+                        """Speichert den neuen Wert, passt Spaltenbreiten an und öffnet ggf. die nächste Spalte."""
+                        new_val_local = entry.get()
+                        table_tree.set(row_identifier, table_headers[col_index], new_val_local)
+                        # Breite anpassen
+                        try:
+                            adjust_table_column_widths(table_tree, table_headers)
+                        except Exception:
+                            pass
+                        committed["done"] = True
+                        edit_win.destroy()
+                        # Reset edit window tracking nach commit / Reset the edit‑window tracking after a commit
+                        edit_cell.current_edit_win = None
+                        edit_cell.current_edit_cell = None
+                        # Nach dem Schließen: Automatisch nächste Spalte bearbeiten
+                        next_col = col_index + 1
+                        if next_col < len(table_headers):
+                            top.after(10, lambda: show_edit_window(row_identifier, next_col))
+                    # Bind Return an commit (normale Enter-Taste)
+                    entry.bind("<Return>", lambda _ev: commit_edit())
+                    # Binde die Enter‑Taste des Nummernblocks (KP_Enter) ebenfalls an commit
+                    entry.bind("<KP_Enter>", lambda _ev: commit_edit())
+                    # OK‑Button
+                    ttk.Button(edit_win, text=tr("OK", "OK"), command=commit_edit).pack(pady=(0,6))
+                    # Beim Schließen ohne Commit keine automatische Weiterführung
+                    def on_close() -> None:
+                        # Versuche das Fenster zu schließen
+                        try:
+                            edit_win.destroy()
+                        except Exception:
+                            pass
+                        # Fenster-Referenzen löschen
+                        edit_cell.current_edit_win = None
+                        edit_cell.current_edit_cell = None
+                    # Escape‑Taste schließt den Dialog ohne automatische Weiterführung
+                    edit_win.bind("<Escape>", lambda _ev: on_close())
+                    edit_win.protocol("WM_DELETE_WINDOW", on_close)
+                    # Speichere das aktuell geöffnete Fenster und die Zelle
+                    edit_cell.current_edit_win = edit_win
+                    edit_cell.current_edit_cell = (row_identifier, col_index)
+                # Öffne den Editdialog für die aktuelle Zelle
+                show_edit_window(row_id, col_idx)
+
+            # Initialisiere Attribute für aktuell geöffnetes Editfenster (verhindert mehrere Fenster). /
+            # Initialize attributes tracking the currently open edit window (prevents multiple windows)
+            # Diese werden verwendet, um das bestehende Fenster zu fokussieren statt ein neues zu öffnen.
+            edit_cell.current_edit_win = None
+            edit_cell.current_edit_cell = None
 
             def on_right_click(event):
                 """Kontextmenü: Erlaube Link‑Öffnen bei URL‑Zellen."""
@@ -6477,9 +6984,78 @@ def launch_gui(path: Path) -> None:
             on_format_change()
             fmt_combo.bind("<<ComboboxSelected>>", on_format_change)
 
-            # Buttons für Hinzufügen und Abbrechen
+            # ---------------------------------------------
+            # Erweiterte Notizen und Dateianhänge
+            # ---------------------------------------------
+            # Sammel-Liste für Dateianhänge (Dicts mit filename & data)
+            attachments_list: list = []
+
+            # Notizen-Textfeld mit Scrollbar
+            ttk.Label(frm, text=tr("Notizen:", "Notes:")).grid(row=7, column=0, sticky="nw", pady=2)
+            notes_frame = ttk.Frame(frm)
+            notes_frame.grid(row=7, column=1, columnspan=2, sticky="nsew", pady=2)
+            txt_notes = tk.Text(notes_frame, height=4, wrap="word")
+            try:
+                txt_notes.configure(background=ENTRY_BG_COLOR)
+            except Exception:
+                pass
+            scr_notes_y = ttk.Scrollbar(notes_frame, orient="vertical", command=txt_notes.yview)
+            txt_notes.configure(yscrollcommand=scr_notes_y.set)
+            txt_notes.grid(row=0, column=0, sticky="nsew")
+            scr_notes_y.grid(row=0, column=1, sticky="ns")
+            notes_frame.rowconfigure(0, weight=1)
+            notes_frame.columnconfigure(0, weight=1)
+
+            # Attachments-Listbox und Buttons
+            ttk.Label(frm, text=tr("Anhänge:", "Attachments:")).grid(row=8, column=0, sticky="nw", pady=2)
+            attach_frame = ttk.Frame(frm)
+            attach_frame.grid(row=8, column=1, columnspan=2, sticky="nsew", pady=2)
+            attach_frame.columnconfigure(0, weight=1)
+            # Listbox zur Anzeige der Dateinamen
+            lst_attach = tk.Listbox(attach_frame, height=3)
+            lst_attach.grid(row=0, column=0, sticky="nsew")
+            # Scrollbar für die Attachments-Liste
+            scr_attach_y = ttk.Scrollbar(attach_frame, orient="vertical", command=lst_attach.yview)
+            lst_attach.configure(yscrollcommand=scr_attach_y.set)
+            scr_attach_y.grid(row=0, column=1, sticky="ns")
+
+            # Buttons Add / Remove
+            btn_attach_frame = ttk.Frame(attach_frame)
+            btn_attach_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=2)
+
+            def add_attachment():
+                """Fügt einen Anhang aus dem Dateidialog hinzu."""
+                fpath = filedialog.askopenfilename(parent=top, title=tr("Datei auswählen", "Select file"))
+                if fpath:
+                    try:
+                        with open(fpath, "rb") as ff:
+                            import base64
+                            data_b64 = base64.b64encode(ff.read()).decode("ascii")
+                        # Anhang zur Liste hinzufügen
+                        attachments_list.append({"filename": os.path.basename(fpath), "data": data_b64})
+                        lst_attach.insert(tk.END, os.path.basename(fpath))
+                    except Exception as ex:
+                        messagebox.showerror(tr("Fehler", "Error"), tr("Datei konnte nicht gelesen werden:", "Could not read file:") + f"\n{ex}", parent=top)
+
+            def remove_attachment():
+                """Entfernt den ausgewählten Anhang."""
+                sel = lst_attach.curselection()
+                if sel:
+                    idx = int(sel[0])
+                    lst_attach.delete(idx)
+                    try:
+                        attachments_list.pop(idx)
+                    except Exception:
+                        pass
+
+            ttk.Button(btn_attach_frame, text=tr("Hinzufügen", "Add"), command=add_attachment).pack(side="left", padx=2)
+            ttk.Button(btn_attach_frame, text=tr("Entfernen", "Remove"), command=remove_attachment).pack(side="left", padx=2)
+
+            # ---------------------------------------------
+            # Buttons für Hinzufügen und Abbrechen (Zeile 9)
+            # ---------------------------------------------
             btn_frame = ttk.Frame(frm)
-            btn_frame.grid(row=8, column=1, sticky="e", pady=8)
+            btn_frame.grid(row=9, column=1, sticky="e", pady=8)
             ttk.Button(btn_frame, text=tr("Hinzufügen", "Add"), command=on_add_click).pack(side="right", padx=4)
             ttk.Button(btn_frame, text=tr("Abbrechen", "Cancel"), command=top.destroy).pack(side="right", padx=4)
 
@@ -6494,13 +7070,22 @@ def launch_gui(path: Path) -> None:
             # Arbeiterfunktion zum Speichern des geänderten Eintrags. Sie nimmt alle Daten
             # als Parameter entgegen und führt die Speicherung im Hintergrund aus.
             def do_save_work(new_label: str, new_username: str, new_email: str,
-                             new_website: str, new_info: str, new_password: Optional[str]) -> None:
-                # Aktualisiere Felder
+                             new_website: str, new_info: str, new_notes: str,
+                             new_attachments: list, new_password: Optional[str]) -> None:
+                """Hintergrundfunktion zum Speichern eines aktualisierten Eintrags.
+
+                Alle Felder werden aktualisiert. Falls ein neues Passwort
+                angegeben wird, ersetzt es das alte. Notizen und Anhänge
+                werden ebenfalls übernommen. Der Tresor wird anschließend
+                gespeichert und der Audit‑Log aktualisiert.
+                """
                 e.label = new_label
                 e.username = new_username
                 e.email = new_email
                 e.website = new_website
                 e.info = new_info
+                e.notes = new_notes
+                e.attachments = list(new_attachments or [])
                 if new_password:
                     e.password = new_password
                 e.updated_at = time.time()
@@ -6560,11 +7145,20 @@ def launch_gui(path: Path) -> None:
                             parent=top,
                         ):
                             return
+                # Notizen und Anhänge ermitteln
+                try:
+                    notes_val = txt_notes.get("1.0", "end").strip()
+                except Exception:
+                    notes_val = e.notes
+                try:
+                    attachments_copy = list(attachments_list)
+                except Exception:
+                    attachments_copy = list(e.attachments)
                 # Starte Speichervorgang im Hintergrund
                 self.run_with_progress(
                     tr("Speichern", "Save"), tr("Änderungen werden gespeichert. Bitte warten...", "Changes are being saved. Please wait..."),
                     do_save_work,
-                    (new_label, new_username, new_email, new_website, new_info, new_pw),
+                    (new_label, new_username, new_email, new_website, new_info, notes_val, attachments_copy, new_pw),
                     on_success=on_save_success,
                     on_error=on_save_error
                 )
@@ -6576,8 +7170,12 @@ def launch_gui(path: Path) -> None:
             top.columnconfigure(0, weight=1)
             top.rowconfigure(0, weight=1)
             frm.columnconfigure(1, weight=1)
-            # Der Info-Container befindet sich in Zeile 6; diese dehnt sich aus
+            # Der Info-Container befindet sich in Zeile 6; diese dehnt sich aus.
+            # Für die Zeilen 7 (Notizen) und 8 (Anhänge) wird ebenfalls eine
+            # Gewichtung gesetzt, damit Textfelder mitwachsen können.
             frm.rowconfigure(6, weight=1)
+            frm.rowconfigure(7, weight=1)
+            frm.rowconfigure(8, weight=1)
             # Label
             ttk.Label(frm, text=tr("Label:", "Label:")).grid(row=0, column=0, sticky="w", pady=2)
             ent_label = ttk.Entry(frm)
@@ -6607,6 +7205,14 @@ def launch_gui(path: Path) -> None:
                 ent_pw.delete(0, tk.END)
                 ent_pw.insert(0, generate_password())
             ttk.Button(frm, text="Generieren", command=do_gen_pw_edit).grid(row=4, column=2, padx=6, pady=2)
+            # Passphrase generieren im Edit-Dialog
+            def do_gen_passphrase_edit():
+                try:
+                    ent_pw.delete(0, tk.END)
+                    ent_pw.insert(0, generate_passphrase())
+                except Exception:
+                    pass
+            ttk.Button(frm, text=tr("Passphrase", "Passphrase"), command=do_gen_passphrase_edit).grid(row=4, column=3, padx=6, pady=2)
             # ----------------------------------------------------------
             # Info‑Format (Text oder Tabelle) und Info‑Container
             # ----------------------------------------------------------
@@ -6693,37 +7299,114 @@ def launch_gui(path: Path) -> None:
                     return
                 col_idx2 = int(col_id2.strip("#")) - 1
                 current_value2 = table_tree.set(row_id2, table_headers[col_idx2])
-                # Wenn der aktuelle Wert ein Hyperlink ist, öffne ihn direkt
-                if current_value2 and isinstance(current_value2, str) and (
+                # Prüfen, ob der Zellwert wie ein Hyperlink aussieht
+                is_link2 = bool(current_value2 and isinstance(current_value2, str) and (
                     current_value2.startswith("http://") or current_value2.startswith("https://") or current_value2.startswith("www.")
-                ):
-                    url4 = current_value2
-                    if url4.startswith("www."):
-                        url4 = "https://" + url4
+                ))
+                # Öffne Link nur, wenn Strg gedrückt ist
+                if is_link2 and (event.state & 0x0004):
+                    url_to_open2 = current_value2
+                    if url_to_open2.startswith("www."):
+                        url_to_open2 = "https://" + url_to_open2
                     try:
-                        webbrowser.open(url4)
+                        webbrowser.open(url_to_open2)
                     except Exception:
                         pass
                     return
-                edit_win = tk.Toplevel(top)
-                edit_win.title(tr("Zelle bearbeiten", "Edit cell"))
-                ttk.Label(edit_win, text=tr("Neuer Wert:", "New value:")).pack(padx=6, pady=(6,2))
-                entry2 = ttk.Entry(edit_win)
-                entry2.pack(padx=6, pady=(0,6), fill="x")
-                entry2.insert(0, current_value2)
-                entry2.focus_set()
-                def commit2():
-                    new_val2 = entry2.get()
-                    table_tree.set(row_id2, table_headers[col_idx2], new_val2)
-                    # Passe Spaltenbreiten an, damit lange Werte vollständig sichtbar sind
+                def show_edit_window2(row_identifier: str, col_index: int) -> None:
+                    # Wenn bereits ein Editfenster existiert, bringe es nach vorne statt ein neues zu öffnen. /
+                    # If an edit window already exists, bring it to the front instead of opening a new one.
+                    existing_win2 = getattr(edit_cell, "current_edit_win", None)
+                    existing_cell2 = getattr(edit_cell, "current_edit_cell", None)
+                    if existing_win2:
+                        try:
+                            if existing_win2.winfo_exists():
+                                if existing_cell2 == (row_identifier, col_index):
+                                    try:
+                                        existing_win2.lift()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        existing_win2.focus_force()
+                                    except Exception:
+                                        pass
+                                    return
+                                else:
+                                    try:
+                                        existing_win2.destroy()
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                    cell_val2 = table_tree.set(row_identifier, table_headers[col_index])
+                    edit_win2 = tk.Toplevel(top)
+                    # Fenstertitel mit Spaltennamen versehen (z.B. „Zelle bearbeiten: Spalte" / „Edit cell: column")
                     try:
-                        adjust_table_column_widths(table_tree, table_headers)
+                        col_name2 = table_headers[col_index] if (0 <= col_index < len(table_headers)) else ""
+                    except Exception:
+                        col_name2 = ""
+                    title_base2 = tr("Zelle bearbeiten", "Edit cell")
+                    if col_name2:
+                        edit_win2.title(f"{title_base2}: {col_name2}")
+                    else:
+                        edit_win2.title(title_base2)
+                    # Dynamischer Hinweistext mit Spaltenname für Deutsch und Englisch
+                    try:
+                        hdr2 = table_headers[col_index] if (0 <= col_index < len(table_headers)) else ""
+                    except Exception:
+                        hdr2 = ""
+                    # Hinweistext mit Spaltennamen in Anführungszeichen
+                    label2_de = f"Neuer Wert für Spalte \"{hdr2}\":" if hdr2 else "Neuer Wert:"
+                    label2_en = f"New value for column \"{hdr2}\":" if hdr2 else "New value:"
+                    ttk.Label(edit_win2, text=tr(label2_de, label2_en)).pack(padx=6, pady=(6,2))
+                    entry2 = ttk.Entry(edit_win2)
+                    entry2.pack(padx=6, pady=(0,6), fill="x")
+                    entry2.insert(0, cell_val2)
+                    entry2.focus_set()
+                    # Vergrößere das Eingabefenster, damit es dreimal so breit ist wie standardmäßig
+                    try:
+                        edit_win2.geometry("600x150")
                     except Exception:
                         pass
-                    edit_win.destroy()
-                # Enter bestätigt die Eingabe genau wie der OK-Button
-                entry2.bind("<Return>", lambda _ev: commit2())
-                ttk.Button(edit_win, text=tr("OK", "OK"), command=commit2).pack(pady=(0,6))
+                    def commit2_inner() -> None:
+                        new_val2 = entry2.get()
+                        table_tree.set(row_identifier, table_headers[col_index], new_val2)
+                        try:
+                            adjust_table_column_widths(table_tree, table_headers)
+                        except Exception:
+                            pass
+                        edit_win2.destroy()
+                        # Reset edit window tracking nach commit / Reset the edit‑window tracking after a commit
+                        edit_cell.current_edit_win = None
+                        edit_cell.current_edit_cell = None
+                        next_col2 = col_index + 1
+                        if next_col2 < len(table_headers):
+                            top.after(10, lambda: show_edit_window2(row_identifier, next_col2))
+                    # Bind Return (normale Enter‑Taste) an commit
+                    entry2.bind("<Return>", lambda _ev: commit2_inner())
+                    # Bind numpad Enter (KP_Enter) an commit
+                    entry2.bind("<KP_Enter>", lambda _ev: commit2_inner())
+                    ttk.Button(edit_win2, text=tr("OK", "OK"), command=commit2_inner).pack(pady=(0,6))
+                    def on_close2() -> None:
+                        try:
+                            edit_win2.destroy()
+                        except Exception:
+                            pass
+                        # Fenster-Referenzen löschen
+                        edit_cell.current_edit_win = None
+                        edit_cell.current_edit_cell = None
+                    # Escape‑Taste schließt den Dialog ohne automatische Weiterführung
+                    edit_win2.bind("<Escape>", lambda _ev: on_close2())
+                    edit_win2.protocol("WM_DELETE_WINDOW", on_close2)
+                    # Speichere das aktuell geöffnete Fenster und die Zelle
+                    edit_cell.current_edit_win = edit_win2
+                    edit_cell.current_edit_cell = (row_identifier, col_index)
+                show_edit_window2(row_id2, col_idx2)
+
+            # Initialisiere Attribute für aktuell geöffnetes Editfenster (verhindert mehrere Fenster). /
+            # Initialize attributes tracking the currently open edit window (prevents multiple windows)
+            edit_cell.current_edit_win = None
+            edit_cell.current_edit_cell = None
 
             def on_right_click(event):
                 nonlocal table_tree
@@ -7125,9 +7808,82 @@ def launch_gui(path: Path) -> None:
                 txt_info.insert("1.0", e.info if e.info else "")
             on_format_change()
             fmt_combo.bind("<<ComboboxSelected>>", on_format_change)
-            # Button-Leiste für Speichern/Abbrechen
+
+            # -------------------------------------------------------------
+            # Erweiterte Notizen und Dateianhänge im Edit‑Dialog
+            # -------------------------------------------------------------
+            # Sammel‑Liste für Dateianhänge vorinitialisieren
+            attachments_list: list = []
+            try:
+                # Vorhandene Anhänge kopieren, damit Änderungen rückgängig gemacht werden können
+                attachments_list = list(e.attachments or [])
+            except Exception:
+                attachments_list = []
+            # Notizenfeld
+            ttk.Label(frm, text=tr("Notizen:", "Notes:")).grid(row=7, column=0, sticky="nw", pady=2)
+            notes_frame_edit = ttk.Frame(frm)
+            notes_frame_edit.grid(row=7, column=1, columnspan=2, sticky="nsew", pady=2)
+            notes_frame_edit.rowconfigure(0, weight=1)
+            notes_frame_edit.columnconfigure(0, weight=1)
+            txt_notes = tk.Text(notes_frame_edit, height=4, wrap="word")
+            try:
+                txt_notes.configure(background=ENTRY_BG_COLOR)
+            except Exception:
+                pass
+            # Vorhandene Notizen einfüllen
+            try:
+                txt_notes.insert("1.0", getattr(e, "notes", ""))
+            except Exception:
+                pass
+            scr_notes_y = ttk.Scrollbar(notes_frame_edit, orient="vertical", command=txt_notes.yview)
+            txt_notes.configure(yscrollcommand=scr_notes_y.set)
+            txt_notes.grid(row=0, column=0, sticky="nsew")
+            scr_notes_y.grid(row=0, column=1, sticky="ns")
+            # Anhängefeld
+            ttk.Label(frm, text=tr("Anhänge:", "Attachments:")).grid(row=8, column=0, sticky="nw", pady=2)
+            attach_frame_edit = ttk.Frame(frm)
+            attach_frame_edit.grid(row=8, column=1, columnspan=2, sticky="nsew", pady=2)
+            attach_frame_edit.columnconfigure(0, weight=1)
+            lst_attach = tk.Listbox(attach_frame_edit, height=3)
+            # Fülle die Liste mit vorhandenen Anhängen
+            try:
+                for att in attachments_list:
+                    lst_attach.insert(tk.END, att.get("filename", ""))
+            except Exception:
+                pass
+            lst_attach.grid(row=0, column=0, sticky="nsew")
+            scr_attach_y = ttk.Scrollbar(attach_frame_edit, orient="vertical", command=lst_attach.yview)
+            lst_attach.configure(yscrollcommand=scr_attach_y.set)
+            scr_attach_y.grid(row=0, column=1, sticky="ns")
+            btn_attach_frame = ttk.Frame(attach_frame_edit)
+            btn_attach_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=2)
+            def add_attachment():
+                fpath = filedialog.askopenfilename(parent=top, title=tr("Datei auswählen", "Select file"))
+                if fpath:
+                    try:
+                        with open(fpath, "rb") as ff:
+                            import base64
+                            data_b64 = base64.b64encode(ff.read()).decode("ascii")
+                        attachments_list.append({"filename": os.path.basename(fpath), "data": data_b64})
+                        lst_attach.insert(tk.END, os.path.basename(fpath))
+                    except Exception as ex:
+                        messagebox.showerror(tr("Fehler", "Error"), tr("Datei konnte nicht gelesen werden:", "Could not read file:") + f"\n{ex}", parent=top)
+            def remove_attachment():
+                sel = lst_attach.curselection()
+                if sel:
+                    idx = int(sel[0])
+                    lst_attach.delete(idx)
+                    try:
+                        attachments_list.pop(idx)
+                    except Exception:
+                        pass
+            ttk.Button(btn_attach_frame, text=tr("Hinzufügen", "Add"), command=add_attachment).pack(side="left", padx=2)
+            ttk.Button(btn_attach_frame, text=tr("Entfernen", "Remove"), command=remove_attachment).pack(side="left", padx=2)
+            # -------------------------------------------------------------
+            # Button-Leiste für Speichern/Abbrechen (jetzt Zeile 9)
+            # -------------------------------------------------------------
             btnf = ttk.Frame(frm)
-            btnf.grid(row=8, column=1, sticky="w", pady=8)
+            btnf.grid(row=9, column=1, sticky="w", pady=8)
             ttk.Button(btnf, text=tr("Speichern", "Save"), command=on_save_click).pack(side="left", padx=4)
             ttk.Button(btnf, text=tr("Abbrechen", "Cancel"), command=top.destroy).pack(side="left", padx=4)
 
@@ -8506,58 +9262,91 @@ def launch_gui(path: Path) -> None:
                         ),
                     )
 
-            ttk.Button(
-                hide_ops,
-                text=tr("Cover-Bild erzeugen…", "Generate cover image…"),
-                command=create_cover_cmd,
-            ).grid(row=0, column=2, sticky="w", padx=(12, 0))
-            ttk.Button(
-                hide_ops,
-                text=tr("Bild aufblasen…", "Enlarge image…"),
-                command=inflate_image_cmd,
-            ).grid(row=0, column=3, sticky="w", padx=(6, 0))
-            ttk.Button(
-                hide_ops,
-                text=tr("Zu versteckende Datei", "File to hide"),
-                command=self.gui_select_hide_data,
-            ).grid(row=1, column=0, sticky="w", pady=2)
-            ttk.Label(hide_ops, textvariable=self.hide_data_path, wraplength=480).grid(row=1, column=1, sticky="w", padx=6)
-            ttk.Button(
-                hide_ops,
-                text=tr("Cover-Datei", "Cover file"),
-                command=self.gui_select_hide_cover,
-            ).grid(row=2, column=0, sticky="w", pady=2)
-            ttk.Label(hide_ops, textvariable=self.hide_cover_path, wraplength=480).grid(row=2, column=1, sticky="w", padx=6)
-            ttk.Button(
-                hide_ops,
-                text=tr("Ziel (.hid)", "Destination (.hid)"),
-                command=self.gui_select_hide_output,
-            ).grid(row=3, column=0, sticky="w", pady=2)
-            ttk.Label(hide_ops, textvariable=self.hide_output_path, wraplength=480).grid(row=3, column=1, sticky="w", padx=6)
-            ttk.Button(
-                hide_ops,
-                text=tr("Verstecken", "Hide"),
-                command=self.gui_do_hide,
-            ).grid(row=4, column=0, sticky="w", pady=(4, 6))
-            # Extraktion
-            extract_ops = ttk.Frame(steg_frame)
-            extract_ops.pack(fill="x")
-            ttk.Label(extract_ops, text=tr("Extrahieren:", "Extract:")).grid(row=0, column=0, sticky="w")
-            ttk.Button(
-                extract_ops,
-                text=tr(".hid-Datei", ".hid file"),
-                command=self.gui_select_extract_stego,
-            ).grid(row=1, column=0, sticky="w", pady=2)
-            ttk.Label(extract_ops, textvariable=self.extract_stego_path, wraplength=480).grid(row=1, column=1, sticky="w", padx=6)
-            # Passwort-Eingabe für die Extraktion
-            ttk.Label(extract_ops, text=tr("Passwort", "Password")).grid(row=2, column=0, sticky="w", pady=2)
-            ttk.Entry(extract_ops, textvariable=self.extract_password, show="*").grid(row=2, column=1, sticky="w", padx=6)
-            # Entfernte Ziel-Datei-Auswahl. Die extrahierte Datei wird automatisch gespeichert.
-            ttk.Button(
-                extract_ops,
-                text=tr("Extrahieren", "Extract"),
-                command=self.gui_do_extract,
-            ).grid(row=3, column=0, sticky="w", pady=(4, 6))
+        # --------------------------------------------------------------
+        # Sicherheitsanalyse: Schwachstellen- und Breach‑Check (Login)
+        # --------------------------------------------------------------
+
+        def gui_check_weakness(self):
+            """
+            Führt eine lokale Sicherheitsprüfung des Tresors durch.
+
+            Der Benutzer wird nach dem Master‑Passwort gefragt. Anschließend wird
+            der Tresor geladen und alle Passwörter werden hinsichtlich Stärke
+            und Duplikaten untersucht. Das Ergebnis wird in einem
+            Informationsdialog angezeigt. Die Prüfung läuft im Hintergrund mit
+            Fortschrittsanzeige.
+            """
+            self.touch()
+            # Lokale Importe der Dialogklassen (simpledialog, messagebox) für Passwortabfrage und Benachrichtigung
+            from tkinter import messagebox, simpledialog
+            # Prüfe Dateipfad
+            try:
+                if not self.path.exists():
+                    messagebox.showerror(tr("Fehler", "Error"), tr("Tresor-Datei existiert nicht.", "Vault file does not exist."), parent=self.root)
+                    return
+            except Exception:
+                pass
+            # Passwort abfragen
+            pw = simpledialog.askstring(
+                tr("Tresor-Passwort", "Vault password"),
+                tr("Master-Passwort:", "Master password:"),
+                show="*",
+                parent=self.root,
+            )
+            if not pw:
+                return
+            # Arbeiterfunktion: Tresor laden und prüfen
+            def do_check_work(pw_str: str) -> Tuple[int, List[str], List[str]]:
+                vlt = load_vault(self.path, pw_str)
+                return check_password_weakness(vlt)
+            # Callback bei Erfolg
+            def on_check_success(res: Tuple[int, List[str], List[str]]):
+                weak_count, weak_labels, duplicate_labels = res
+                # Erstelle Ergebnistext
+                msg_lines_de: List[str] = []
+                msg_lines_en: List[str] = []
+                msg_lines_de.append(f"{weak_count} schwache Passwörter gefunden.")
+                msg_lines_en.append(f"{weak_count} weak passwords found.")
+                if weak_labels:
+                    msg_lines_de.append("Schwache Einträge: " + ", ".join(weak_labels))
+                    msg_lines_en.append("Weak entries: " + ", ".join(weak_labels))
+                if duplicate_labels:
+                    msg_lines_de.append("Doppelt verwendete Passwörter bei: " + ", ".join(duplicate_labels))
+                    msg_lines_en.append("Passwords reused by: " + ", ".join(duplicate_labels))
+                info_msg = tr("\n".join(msg_lines_de), "\n".join(msg_lines_en))
+                messagebox.showinfo(tr("Analyse beendet", "Analysis finished"), info_msg, parent=self.root)
+            # Callback bei Fehler
+            def on_check_error(exc: Exception):
+                messagebox.showerror(tr("Fehler", "Error"), tr("Analyse fehlgeschlagen:", "Analysis failed:") + f"\n{exc}", parent=self.root)
+            # Starte mit Fortschrittsdialog
+            self.run_with_progress(
+                tr("Analyse", "Analysis"),
+                tr("Tresor wird geprüft...", "Checking vault..."),
+                do_check_work,
+                args=(pw,),
+                on_success=on_check_success,
+                on_error=on_check_error,
+            )
+
+        def gui_download_breach_list(self):
+            """
+            Öffnet die Webseite für den Download der Pwned‑Password‑Hash‑Liste.
+
+            Diese Option öffnet den Browser und verweist auf die "Pwned Passwords"
+            ‑Seite von haveibeenpwned.com. Dort können Sie eine Hash‑Liste
+            herunter laden, um Ihre Passwörter offline zu prüfen. Das Programm
+            speichert oder sendet keine Daten und zeigt keine weiteren
+            Bedienoberflächen an.
+            """
+            # Sicherstellen, dass die GUI nicht in den Ruhemodus wechselt
+            self.touch()
+            # Lokaler Import für die Fehlermeldung
+            from tkinter import messagebox
+            url = "https://haveibeenpwned.com/passwords"
+            try:
+                webbrowser.open(url)
+            except Exception:
+                messagebox.showinfo(tr("Info", "Info"), tr("Konnte Browser nicht öffnen.", "Could not open browser."), parent=self.root)
 
         def lock(self):
             """

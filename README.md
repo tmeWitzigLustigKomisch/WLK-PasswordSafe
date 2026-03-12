@@ -10,7 +10,7 @@
 
 **WLK PasswordSafe** ist ein plattformübergreifender Passwort‑Manager, der als einzelne Python‑Datei ausgeliefert wird. Er richtet sich an Anwender, die ihre Zugangsdaten sicher, lokal und nachvollziehbar verwalten möchten – ganz ohne Cloud‑Anbindung oder Telemetrie. Dieses Repository enthält:
 
-- **`wlk_passwordsafe.py`** – das aktuelle Hauptskript in Version 2.8.9. Es bietet eine grafische Oberfläche (GUI) und einen mächtigen Kommandozeilenmodus (CLI).
+ - **`wlk_passwordsafe.py`** – das aktuelle Hauptskript in Version 3.0.0. Es bietet eine grafische Oberfläche (GUI) und einen mächtigen Kommandozeilenmodus (CLI). Seit Version 2.9.5 wurden zahlreiche Verbesserungen schrittweise eingeführt: formatierte Erklärungen zur Sicherheitsanalyse, ein überarbeitetes Scrollverhalten im Login‑Fenster (die Seite lässt sich überall per Mausrad scrollen), Korrekturen beim Bearbeiten von Tabellenzellen (es wird nur noch ein Eingabefenster geöffnet) sowie weitere Stabilitäts‑ und Übersetzungsanpassungen. Zusätzlich zu den bestehenden Features – lokalem Schwachstellen‑/Breach‑Check, Mehrfach‑Tresor‑Verwaltung, erweiterten Notizen und Dateianhängen sowie Passphrasen‑Generator – fasst Version 3.0.0 diese Verbesserungen als Hauptrelease zusammen.
 - **`legacy/`** – einen Ordner mit sämtlichen Vorversionen des Programms sowie einer detaillierten Versionshistorie in `legacy/VERSION_HISTORY.md`. So lassen sich Änderungen transparent nachvollziehen.
 - **`images/`** – Screenshots der wichtigsten Programmfenster. Die Datei‑Namen sind selbsterklärend (z. B. `gui_no_vault_screen.png`, `cli_main_menu.png`).
 - **`README.md`** – diese ausführliche Dokumentation in Deutsch und Englisch.
@@ -44,6 +44,14 @@ Das Programm speichert Passwörter in einer verschlüsselten Tresor‑Datei (`.p
 - **Mehrsprachig:** WLK PasswordSafe erkennt die Systemsprache automatisch und unterstützt Deutsch und Englisch. Über den Parameter `FORCE_LANG` oder per Button lässt sich die Sprache jederzeit ändern.
 
 ‑ **Auto‑Lock & Backups:** Der Tresor sperrt sich nach einer definierten Zeit der Inaktivität automatisch (Standard: 5 Minuten, konfigurierbar via `AUTOLOCK_MINUTES`). Beim Speichern werden verschlüsselte Sicherungskopien angelegt; standardmäßig werden zwei Backups aufbewahrt (`BACKUP_KEEP`), damit Sie im Notfall auf eine ältere Version zurückgreifen können.
+
+‑ **Lokale Sicherheitsanalyse & Breach‑Check:** Auf der Login‑Seite können Sie Ihren Tresor vor dem Öffnen auf schwache oder doppelt genutzte Passwörter prüfen. Diese Analyse erfolgt vollständig offline. Zusätzlich haben Sie die Möglichkeit, eine von Have I Been Pwned bereitgestellte Hash‑Liste herunterzuladen, um kompromittierte Passwörter ohne Preisgabe sensibler Daten zu erkennen【104165541262030†L86-L88】.
+
+‑ **Mehrfache Tresore & Schneller Wechsel:** Eine Liste der zuletzt verwendeten Tresor‑Dateien erleichtert den schnellen Wechsel zwischen mehreren Vaults (z. B. „Privat“ und „Arbeit“). Die Liste wird in der Konfiguration gespeichert und kann über die Startseite ausgewählt werden.
+
+‑ **Erweiterte Notizen & Dateianhänge:** Zu jedem Eintrag können Sie nun ausführliche Notizen hinterlegen und kleine Dateien (z. B. Lizenzschlüssel, Bilder oder PDF‑Dokumente) als Anhang speichern. Notizen und Anhänge werden wie alle anderen Daten sicher verschlüsselt und bleiben im Tresor.
+
+‑ **Passphrasen‑Generator:** Zusätzlich zum herkömmlichen Zeichenketten‑Generator können Sie sichere, aber leicht merkbare Passphrasen generieren lassen. Dabei werden mehrere zufällige Wörter kombiniert, wie von aktuellen Sicherheitsrichtlinien empfohlen.
 
 ## Installation
 
@@ -190,7 +198,7 @@ Neben der Verwaltung von Tresoren können Sie WLK PasswordSafe nutzen, um Datei
 
 ## Legacy & Versionsgeschichte
 
-Alle historischen Versionen des Skripts finden Sie im Ordner [`legacy`](legacy). Die Datei [`legacy/VERSION_HISTORY.md`](legacy/VERSION_HISTORY.md) enthält eine tabellarische Übersicht mit Versionsnummer, Datum und einer kurzen Beschreibung der Änderungen. Die aktuelle Version ist **2.8.6**. Die Änderung von Version 2.8.5 auf 2.8.6 bestand hauptsächlich in der Umbenennung des Programms (`pwmanager` → `wlk_passwordsafe`), der Umbenennung der Konfigurationsdatei und kleineren Anpassungen im Hilfe‑Text. Funktional sind die Versionen identisch.
+Alle historischen Versionen des Skripts finden Sie im Ordner [`legacy`](legacy). Die Datei [`legacy/VERSION_HISTORY.md`](legacy/VERSION_HISTORY.md) enthält eine tabellarische Übersicht mit Versionsnummer, Datum und einer kurzen Beschreibung der Änderungen. Die aktuelle Version ist **3.0.0**. Nach Version 2.9.5 wurden in den Folgeversionen 2.9.6 bis 2.9.9 weitere Verbesserungen umgesetzt: Die Erklärung zur Sicherheitsanalyse im Login‑Fenster wurde klarer strukturiert und optisch getrennt, das Scrollverhalten im Startfenster wurde komplett überarbeitet, sodass das Mausrad überall funktioniert, und beim Bearbeiten von Tabellenzellen wird jetzt nur noch ein einzelnes Editierfenster geöffnet. Version 3.0.0 fasst all diese Änderungen zusammen und markiert einen stabilen Hauptrelease mit lokaler Sicherheitsanalyse (Schwachstellen‑ und Breach‑Check), optionalem Download der Pwned‑Password‑Hash‑Liste zur Offline‑Überprüfung, erweiterten Notiz‑ und Dateianhangsfeldern, einer komfortablen Liste zuletzt verwendeter Tresore sowie einem Passphrasen‑Generator.
 
 ## Lizenz & Mitwirkung
 
@@ -218,7 +226,7 @@ Aktuell sind keine kritischen Fehler bekannt. Sollten Sie dennoch auf Probleme, 
 
 **WLK PasswordSafe** is a cross‑platform, high‑security password manager delivered as a single Python file. It is designed for users who want to manage their credentials locally and transparently without any cloud service or telemetry. This repository contains:
 
-- **`wlk_passwordsafe.py`** – the main script (version 2.8.6) providing a graphical user interface (GUI) and a powerful command‑line interface (CLI).
+ - **`wlk_passwordsafe.py`** – the main script (version 3.0.0) providing a graphical user interface (GUI) and a powerful command‑line interface (CLI). Since version 2.9.5 a number of improvements have been introduced incrementally: the explanation of the security analysis on the login page was reformatted into separate paragraphs, the scroll behaviour on the start page was completely reworked so that the mouse wheel works anywhere, and editing a table cell now opens only a single editor window. These refinements complement the major features already added in version 2.9.5 – local vulnerability/breach checks, multi‑vault management with a recent‑vault list, extended notes and file attachments, and a passphrase generator. Version 3.0.0 groups all of these enhancements together into a stable release.
 - **`legacy/`** – a folder with all previous versions of the program and a detailed change log (`legacy/VERSION_HISTORY.md`).
 - **`images/`** – screenshots of the main program windows, named descriptively (e.g. `gui_no_vault_screen.png`, `cli_main_menu.png`).
 - **`README.md`** – this documentation in German and English.
@@ -249,6 +257,14 @@ Passwords are stored in an encrypted vault file (`.pwm`). A triple encryption ca
 - **Tables & sorting:** Info fields can be structured as tables and sorted by column. The entry list can also be sorted by clicking the column headers. Horizontal and vertical gridlines improve readability.
 - **File & steganography tools:** Encrypt any file with a password (`.enc`) or hide files in cover images (`.hid`). You can also extract hidden data or enlarge images to a minimum size.
 - **Bilingual:** WLK PasswordSafe automatically detects the system language and supports German and English. You can override the language via the `FORCE_LANG` parameter or a GUI button.
+
+‑ **Local security analysis & breach check:** On the login page you can scan your vault for weak or reused passwords. This analysis runs completely offline. You can optionally download a hash list from Have I Been Pwned to check your passwords against known breaches without revealing any secrets【104165541262030†L86-L88】.
+
+‑ **Multiple vaults & quick switching:** A list of recently used vault files makes it easy to switch between different vaults (e.g. private and work). The list is saved in the configuration and can be selected directly on the start page.
+
+‑ **Extended notes & file attachments:** Each entry can now include extensive notes and small file attachments (such as licence keys, images or PDF documents). Notes and attachments are encrypted along with your other data.
+
+‑ **Passphrase generator:** In addition to the traditional random string generator, the program can generate secure yet memorable passphrases by combining multiple random words, following modern password guidelines.
 
 ### Installation
 
@@ -395,7 +411,7 @@ Beyond password management, WLK PasswordSafe includes tools for securing arbitr
 
 ### Legacy & version history
 
-All historic versions of the script are stored in the [`legacy`](legacy) directory. [`legacy/VERSION_HISTORY.md`](legacy/VERSION_HISTORY.md) provides a table of versions, release dates and concise change descriptions. The current version is **2.8.6**, whose main purpose was to rename the program (`pwmanager` → `wlk_passwordsafe`), rename the default configuration file and update help texts. No functional changes were made compared to 2.8.5.
+All historic versions of the script are stored in the [`legacy`](legacy) directory. [`legacy/VERSION_HISTORY.md`](legacy/VERSION_HISTORY.md) provides a table of versions, release dates and concise change descriptions. The current version is **3.0.0**. After version 2.9.5 several minor releases (2.9.6–2.9.9) delivered further improvements: the explanation of the security analysis on the login page was structured more clearly, the scroll behaviour on the start page was completely reworked so that the mouse wheel works everywhere, and editing a table cell now opens only a single editor window. Version 3.0.0 groups these enhancements together into a stable major release, featuring the local security analysis, an optional offline hash‑list download, a list of recent vaults for quick switching, extended notes and file attachments per entry, a passphrase generator and numerous bug fixes.
 
 ### Licence & contributing
 
