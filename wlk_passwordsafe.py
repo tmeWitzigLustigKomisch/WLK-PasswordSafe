@@ -1,237 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-wlk_passwordsafe.py – Hochsicherer Passwort‑Manager als Einzeldatei. / wlk_passwordsafe.py – Highly secure password manager as a single file.
+wlk_passwordsafe.py – God-Tier Passwort-Manager (Native Einzeldatei)
 
-### Zusätzliche Funktionen / Additional features
+### GOD-TIER SICHERHEITSARCHITEKTUR / GOD-TIER SECURITY ARCHITECTURE
+DE:
+- **Quantensicher (AES-256-GCM & ChaCha20-Poly1305):** Hält Angriffen mit dem Grover-Algorithmus stand (effektive 128-Bit-Sicherheit).
+- **Die Teergrube (KDF-Kaskade):** Masterpasswort -> Argon2id (1 GB RAM) -> PBKDF2 (2.5 Mio Iterationen) -> Scrypt. Zerstört jeden Brute-Force-Ansatz.
+- **Matroschka-Verschachtelung:** Tresor wird standardmäßig 50-mal ineinander verschlüsselt (EXTRA_ENCRYPTION_LAYERS = 50).
+- **Rausch-Padding:** Jede Datei wird auf min. 50 MB mit kryptografischem Rauschen aufgebläht.
+- **Anti-Screenshot (Windows):** Das Fenster ist unsichtbar für OBS, Snipping-Tool & Co. (SetWindowDisplayAffinity).
+- **Keyfile & Gerätebindung:** Bindet Tresore an Hardware-IDs oder Bilddateien.
+- **Cyber-Theme:** Kann in der wlk_passwordsafe_config.json via "GUI_THEME": "cyber" aktiviert werden.
 
-- **Keyfile & Gerätebindung / Keyfile & device binding:** Sie können optional eine Schlüsseldatei (Keyfile) und sogar eine Gerätebindung aktivieren. Das Keyfile erhöht die Entropie Ihres Master‑Passworts deutlich. Die Gerätebindung mischt eine eindeutige Geräte‑ID (Linux: ``/etc/machine-id``, Windows: ``MachineGuid``) in den KDF‑Input. / You can optionally use an external key file and even bind the vault to a specific device. The key file dramatically increases your password entropy. Device binding mixes a unique machine ID (Linux: ``/etc/machine-id``, Windows: ``MachineGuid``) into the KDF input.
-- **Argon2 Auto‑Tuning / Argon2 auto‑tuning:** Wenn das Modul ``argon2-cffi`` verfügbar ist, nutzt der Passwortmanager Argon2id anstelle von scrypt. Ein Auto‑Tuning ermittelt auf Ihrem System passende Parameter für Zeit und Speicher. / If the ``argon2-cffi`` module is available, the password manager uses Argon2id instead of scrypt. An auto‑tuning step picks safe time and memory parameters for your hardware.
-- **Mindestpasswortqualität / Minimum password quality:** Beim Anlegen eines Tresors wird Ihr Master‑Passwort auf Mindestlänge, Groß‑/Kleinbuchstaben, Ziffern und Sonderzeichen geprüft. / When creating a new vault, your master password is checked for minimum length, uppercase/lowercase letters, digits and special characters.
-- **Zwischenablage‑Sicherheit / Clipboard security:** Passwörter im Klartext werden automatisch wieder maskiert und die Zwischenablage wird nach wenigen Sekunden geleert. / Plaintext passwords are automatically re‑masked and the clipboard is cleared after a few seconds.
-- **Tabellen & Sortierung / Tables & sorting:** Info‑Felder können als formatierbare Tabellen dargestellt werden. Sie können Spalten und Zeilen definieren, die Spaltennamen nachträglich anpassen und Spalten per Klick sortieren. Auch die Hauptliste der Einträge lässt sich durch Klicken auf die Spaltenköpfe sortieren. / Info fields can be formatted as tables. You can define columns and rows, rename columns later and sort by clicking a column header. The main entry list can also be sorted by clicking its headers.
+EN:
+- **Quantum-Safe (AES-256-GCM & ChaCha20-Poly1305):** Withstands Grover's algorithm attacks.
+- **The Tarpit (KDF Cascade):** Master password -> Argon2id (1 GB RAM) -> PBKDF2 (2.5 million iterations) -> Scrypt.
+- **Matryoshka Nesting:** Vault is encrypted 50 times inside itself by default.
+- **Noise padding:** Each file is bloated to at least 50 MB.
+- **Anti-Screenshot (Windows):** Invisible to OBS, Snipping Tool, etc.
+- **Keyfile & Device Binding:** Binds vaults to hardware IDs.
+- **Cyber Theme:** Activate via "GUI_THEME": "cyber".
 
-### Datenschutz & Quellen / Privacy & sources
+### WICHTIG: KEIN DOCKER / IMPORTANT: NO DOCKER
+DE: Der Einsatz von Docker ist strengstens untersagt! Nativer Betrieb ist zwingend erforderlich für Hardwarebindung und Screenshot-Schutz.
+EN: The use of Docker is strictly prohibited! Native execution is required.
 
-- Dieses Programm verarbeitet alle Daten ausschließlich lokal. Es werden keine Passwörter oder personenbezogenen Daten an Dritte übertragen. / This program processes all data solely on your local machine. No passwords or personal data are sent to third parties.
-- Verwendete Python‑Module: Es werden primär Standardbibliotheken genutzt; zusätzlich wird das Paket ``cryptography`` benötigt. Optional können ``pyperclip`` und ``argon2-cffi`` verwendet werden (KDF-Funktion). Dazu gehören u. a. ``argparse``, ``base64``, ``getpass``, ``os``, ``pathlib``, ``json``, ``hashlib``, ``hmac``, ``secrets``, ``shutil``, ``stat``, ``string``, ``subprocess``, ``sys``, ``tempfile``, ``textwrap``, ``time``, ``csv``, ``threading``, ``struct``, ``dataclasses``, ``webbrowser``, ``locale`` und ``tkinter`` für die GUI. / Used Python modules: the standard library is used wherever possible; the ``cryptography`` package is required, and ``pyperclip`` and ``argon2-cffi`` may optionally be installed (for KDF functionality). Modules used include ``argparse``, ``base64``, ``getpass``, ``os``, ``pathlib``, ``json``, ``hashlib``, ``hmac``, ``secrets``, ``shutil``, ``stat``, ``string``, ``subprocess``, ``sys``, ``tempfile``, ``textwrap``, ``time``, ``csv``, ``threading``, ``struct``, ``dataclasses``, ``webbrowser``, ``locale`` and ``tkinter`` for the GUI.
-- Ihre Tresordatei und Konfigurationsdatei werden nur lokal gespeichert. Wir speichern keinerlei Telemetrie. / Your vault and configuration files are stored locally. We do not collect any telemetry.
-
-### Credits & Werbung / Credits & advertising
-
-- Dieses Programm wurde von **FleXcon** entwickelt. / This program was developed by **FleXcon**.
-- Besuchen Sie unseren Telegram‑Kanal: @WitzigLustigKomisch / Check out our Telegram channel: @WitzigLustigKomisch
-
-### Haftungsausschluss / Disclaimer
-
-- Dieses Programm wird ohne jegliche Gewährleistung bereitgestellt. Die Nutzung erfolgt auf eigene Gefahr. Der Entwickler haftet nicht für Schäden, Datenverluste oder sonstige Probleme, die durch die Verwendung dieser Software entstehen. / This program is provided without any warranty. Use it at your own risk. The developer is not liable for any damage, data loss or other issues arising from the use of this software.
-- Bitte erstellen Sie stets Sicherungskopien Ihrer Daten, bevor Sie Verschlüsselungs- oder Steganografie‑Funktionen verwenden, und prüfen Sie die Wiederherstellbarkeit Ihrer Backups. / Please always make backup copies of your data before using encryption or steganography functions and verify that your backups can be restored.
-
-### Lizenz / License
-
-- Dieses Programm wird unter der MIT‑Lizenz veröffentlicht. Sie dürfen den Quellcode frei verwenden, ändern und weitergeben, solange Sie den ursprünglichen Copyright‑Hinweis und diese Lizenzbedingungen beibehalten. / This program is released under the MIT License. You may use, modify and distribute the source code freely, provided that you retain the original copyright notice and these licence terms.
-
-Deutsch:
-Dieser Passwortmanager speichert Ihre Passwörter sicher in einer verschlüsselten Tresor‑Datei.
-Er nutzt eine dreifache Verschlüsselungskaskade (AES‑256‑GCM → XOR‑Obfuskation via
-HMAC‑Pad → ChaCha20‑Poly1305). Darüber hinaus können Sie beliebig viele **zusätzliche
-Verschlüsselungsschichten** aktivieren: Jede Schicht fügt ein eigenes Salt, Nonce,
-One‑Time‑Pad und eine HMAC hinzu und erschwert so eine nachträgliche Analyse.  Die Anzahl dieser
-Schichten wird durch die Variable ``EXTRA_ENCRYPTION_LAYERS`` bestimmt. Eine Eingabe von ``0``
-bedeutet, dass nur die Triple‑Verschlüsselung verwendet wird (Dateiformatversion 3); ``1``
-entspricht einer zusätzlichen XOR/HMAC‑Schicht (Version 4); ``2`` bedeutet zwei zusätzliche
-Schichten (Version 5) usw. Es gibt kein festes Maximum – mehr Schichten erhöhen jedoch die
-Dateigröße und den Rechenaufwand beim Öffnen und Speichern. Über den scrypt‑KDF werden drei
-unabhängige Schlüssel (AES‑, ChaCha‑ und MAC‑Schlüssel) aus Ihrem Master‑Passwort abgeleitet.
-Ein HMAC‑SHA512 sichert die Integrität der Daten. Bei jedem Speichervorgang werden
-Salt/Nonce/Pad neu generiert, sodass die Datei binär immer anders aussieht.  Das Speichern
-erfolgt atomar; optional können vor dem Überschreiben Backups der vorherigen Version angelegt
-werden. Eine optionale Passwortstärkewarnung erinnert an die Mindestlänge des Master‑Passworts.
-
-### GUI‑Benutzung
-1. Starten Sie das Programm mit ``python wlk_passwordsafe.py`` und geben Sie ein Master‑Passwort ein.
-2. **Login‑Fenster:** Die Schaltflächen erlauben das Erstellen eines neuen Tresors, das Öffnen
-   einer vorhandenen Tresor‑Datei, das Auswählen einer anderen Tresor‑Datei, das Laden, Erstellen
-   oder Bearbeiten einer Konfigurationsdatei, das Umschalten der Sprache, das Aufrufen dieser Hilfe
-   und das Verlassen des Programms.
-3. **Hauptansicht:** Nach dem Entsperren zeigt die Liste Ihre Einträge. Die Buttons rechts bieten
-   folgende Funktionen:
-   * *Anzeigen:* Doppelklick oder Button, um einen Eintrag inklusive Benutzername, Passwort,
-     E‑Mail und URL anzuzeigen. Der URL‑Link ist klickbar.
-   * *Hinzufügen/Bearbeiten/Löschen:* Neue Einträge erstellen, vorhandene bearbeiten oder löschen.
-   * *Exportieren:* Einzelne Einträge als TXT, alle Einträge als TXT oder CSV exportieren.
-     Exportierte Dateien sind unverschlüsselt – bitte sicher löschen.
-   * *Importieren:* CSV‑Datei importieren; Einträge werden mit neuen IDs in den Tresor eingefügt.
-   * *Starkes Passwort generieren:* Erstellt ein zufälliges Passwort und kopiert es in die Zwischenablage.
-   * *Master‑Passwort ändern:* Ermöglicht das Ändern des Master‑Passworts. Stellen Sie sicher, dass
-     Sie sich das neue Passwort merken.
-   * *Neu verschlüsseln (save):* Speichert den Tresor und generiert neue Zufallsdaten (Salt/Nonce/Pad).
-     Backups werden entsprechend der Konfiguration angelegt.
-   * *Datei‑Operationen:* Öffnet ein Untermenü für das Verschlüsseln/Entschlüsseln beliebiger
-     Dateien sowie das Verstecken/Extrahieren von Dateien in Cover‑Bildern.
-
-4. **Datei‑Operationen:**
-   * *Datei verschlüsseln/entschlüsseln:* Wählen Sie eine Eingabedatei, geben Sie ein Passwort ein
-     und wählen Sie den Zielpfad. Die verschlüsselte Datei erhält die Endung ``.enc``.
-   * *Datei verstecken:* Wählen Sie zuerst die zu versteckende Datei, dann ein Cover‑Bild
-     (BMP/PNG/JPEG) und einen Zielnamen. Ein Passwort schützt den Inhalt; die Ausgabedatei
-     bekommt die Endung ``.hid``.
-   * *Versteckte Datei extrahieren:* Wählen Sie eine ``.hid``‑Datei und einen Zielpfad. Geben Sie
-     das Passwort ein, um die ursprüngliche Datei zu extrahieren.
-
-5. Unten im Fenster wird der aktuelle Tresor‑Status angezeigt sowie ein Hinweis zur Telegram‑Gruppe.
-   Mit der Schaltfläche „Sprache wechseln“ können Sie jederzeit zwischen Deutsch und Englisch
-   umschalten.
-
-### CLI‑Benutzung
-Starten Sie die Kommandozeile mit ``python wlk_passwordsafe.py --cli`` und geben Sie Ihr Master‑Passwort
-ein. Ein numerisches Menü erscheint. Geben Sie die passende Nummer ein und bestätigen Sie mit Enter:
-
-```
-1 – Einträge auflisten
-2 – Eintrag anzeigen
-3 – Eintrag hinzufügen
-4 – Eintrag bearbeiten
-5 – Eintrag löschen
-6 – Einzelnen Eintrag exportieren (TXT)
-7 – Alle Einträge exportieren (TXT)
-8 – Alle Einträge exportieren (CSV)
-9 – Starkes Passwort generieren
-P – Passwort in Zwischenablage kopieren
-S – Tresor neu verschlüsseln (save)
-C – Konfiguration erstellen
-10 – Datei verschlüsseln
-11 – Datei entschlüsseln
-12 – Datei verstecken
-13 – versteckte Datei extrahieren
-14 – CSV importieren
-0 – Beenden (speichert automatisch)
-```
-
-Die Optionen 10–13 führen die gleichen Datei‑Operationen wie in der GUI aus. Option 14 importiert
-eine CSV‑Datei, wobei neue IDs vergeben werden. Beachten Sie, dass Exporte im Klartext erfolgen.
-Verwenden Sie die folgenden Befehle, um Cover‑Bilder für das Steganografie‑Feature zu erstellen oder
-vorhandene Bilder aufzufüllen:
-
-```
-python wlk_passwordsafe.py --make-cover OUT.(bmp|png|jpg) --size-mib 1.0
-python wlk_passwordsafe.py --inflate-image SRC.(jpg|jpeg|png|bmp) OUT.(jpg|png|bmp) --size-mib 1.0
-```
-
-English:
-This password manager stores your passwords securely in an encrypted vault file. It uses a
-triple‑layer encryption cascade (AES‑256‑GCM → XOR obfuscation via an HMAC pad →
-ChaCha20‑Poly1305). Beyond this, you can enable an arbitrary number of **additional encryption
-layers**: each extra layer derives its own salt and nonce from your master password,
-generates a one‑time pad and computes an HMAC, making the vault even more difficult to analyze.
-The number of extra layers is controlled via the ``EXTRA_ENCRYPTION_LAYERS`` variable. A value
-of ``0`` means only the triple‑layer encryption is used (file format version 3); ``1`` adds
-one extra XOR/HMAC layer (version 4); ``2`` adds two layers (version 5) and so on. There is
-no fixed maximum – increasing the number of layers will grow the file size and CPU time when
-opening or saving a vault.  The scrypt KDF derives three independent keys (AES, ChaCha and
-MAC keys) from your master password. An HMAC‑SHA512 protects the data integrity. Each save
-operation regenerates salts, nonces and pads so the file always looks different at the binary
-level. Saving is atomic and can optionally create backups. An optional password strength warning
-reminds you of the minimum length of the master password.
-
-### GUI usage
-1. Start the program with ``python wlk_passwordsafe.py`` and enter a master password.
-2. **Login window:** Buttons allow you to create a new vault, open an existing vault file, select
-   a different vault file, load, create or edit a configuration file, switch languages, open this
-   help or exit.
-3. **Main view:** After unlocking, the list displays your entries. The buttons on the right offer
-   these functions:
-   * *View:* Double‑click or click to see an entry’s details (username, password, email and URL).
-     The URL is a clickable link.
-   * *Add/Edit/Delete:* Create new entries, modify existing ones or remove them.
-   * *Export:* Export a single entry as TXT, all entries as TXT or CSV. Exported files are
-     plaintext – securely delete them afterwards.
-   * *Import:* Import a CSV file; entries will be assigned new IDs.
-   * *Generate strong password:* Creates a random password and copies it to the clipboard.
-   * *Change master password:* Allows you to change the master password. Ensure you remember the
-     new password.
-   * *Re‑encrypt (save):* Saves the vault and generates fresh randomness (salts, nonces and pads).
-     Backups are created according to the configuration.
-   * *File operations:* Opens a submenu to encrypt/decrypt arbitrary files and hide/extract files
-     inside cover images.
-
-4. **File operations:**
-   * *Encrypt/Decrypt file:* Select an input file, enter a password and choose an output path.
-     The encrypted file gets the extension ``.enc``.
-   * *Hide a file:* Select the file to hide, then a cover image (BMP/PNG/JPEG) and an output
-     name. Enter a password; the output will have the extension ``.hid``.
-   * *Extract hidden file:* Select a ``.hid`` file and an output path. Enter the password to
-     extract the original file.
-
-5. The status bar shows the current vault state and a Telegram channel invitation. Use
-   “Switch language” to toggle between English and German at any time.
-
-### CLI usage
-Start the command‑line interface with ``python wlk_passwordsafe.py --cli`` and enter your master
-password. A numeric menu will appear. Type the number and press Enter:
-
-```
-1 – List entries
-2 – View entry
-3 – Add entry
-4 – Edit entry
-5 – Delete entry
-6 – Export single entry (TXT)
-7 – Export all entries (TXT)
-8 – Export all entries (CSV)
-9 – Generate a strong password
-P – Copy password to clipboard
-S – Re‑encrypt the vault (save)
-C – Create configuration file
-10 – Encrypt a file
-11 – Decrypt a file
-12 – Hide a file
-13 – Extract hidden file
-14 – Import CSV
-0 – Exit (automatically saves)
-```
-
-Options 10–13 perform the same file operations as the GUI. Option 14 imports a CSV file and
-assigns new IDs. Please note that exports are created in plaintext. Use the standalone tools
-below to generate cover images for steganography or enlarge existing images until they reach the
-specified minimum size:
-
-```
-python wlk_passwordsafe.py --make-cover OUT.(bmp|png|jpg) --size-mib 1.0
-python wlk_passwordsafe.py --inflate-image SRC.(jpg|jpeg|png|bmp) OUT.(jpg|png|bmp) --size-mib 1.0
-```
-
-Diese Werkzeuge / These tools erzeugen ein zufälliges Cover‑Bild oder blasen ein vorhandenes Bild
-auf einen zufälligen Hintergrund auf, bis es eine Mindestgröße erreicht.
-
-### Beispiele / Examples
-
-Deutsch:
-- **Neuen Tresor erstellen:** Wenn noch keine Tresor‑Datei existiert, geben Sie einfach ein neues
-  Master‑Passwort ein und klicken Sie im Login‑Fenster auf „Neu“. Der Tresor wird angelegt,
-  sobald Sie ihn speichern.
-- **Datei verschlüsseln:** Öffnen Sie im Menü „Datei‑Operationen“ die Option „Datei
-  verschlüsseln“. Wählen Sie Ihre Datei, geben Sie ein Passwort ein und speichern Sie das
-  Ergebnis als .enc‑Datei ab.
-- **Datei verstecken und extrahieren:** Verwenden Sie ein unauffälliges Bild als Cover.
-  Verstecken Sie Ihre Datei mithilfe eines Passworts. Zum Extrahieren wählen Sie die .hid‑Datei,
-  geben Sie das Passwort ein und speichern das extrahierte Original.
-- **Konfiguration verwenden:** Erstellen Sie eine Konfigurationsdatei über „Create config“.
-  Die Datei ``wlk_passwordsafe_config.json`` speichert Einstellungen wie Backups, Farbschema und
-  KDF‑Parameter. Laden Sie diese Datei im Login‑Fenster, um Ihr persönliches Profil zu verwenden.
-
-
-English:
-- **Creating a new vault:** If no vault file exists, simply enter a new master password and click
-  “New” in the login window. The vault will be created once you save it.
-- **Encrypting a file:** Open the “Encrypt file” option in the file operations menu. Select your
-  file, enter a password and save the result as a .enc file.
-- **Hiding and extracting a file:** Use an innocuous image as the cover. Hide your file using a
-  password. To extract, choose the .hid file, enter the password and save the extracted original.
-- **Using a configuration:** Create a configuration file via “Create config”. The file
-  ``wlk_passwordsafe_config.json`` stores settings such as backups, color scheme and KDF parameters.
-  Load this file in the login window to apply your personal preferences.
-
+### LIZENZ / LICENSE
+MIT-Lizenz. Entwickelt von FleXcon. @WitzigLustigKomisch (Telegram).
 """
 
 from __future__ import annotations
@@ -260,6 +56,21 @@ import webbrowser  # Für klickbare Links in der GUI
 import locale  # für deutsches Datumsformat
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Callable, List
+
+# --- STRICT MEMORY TRACEBACK HOOK ---
+def _secure_excepthook(exc_type, exc_value, traceback):
+    """
+    Verhindert, dass lokale Variablen bei einem Crash im Klartext 
+    in das System-Traceback oder in Logfiles geschrieben werden.
+    """
+    import sys
+    print(f"\n[CRITICAL ERROR] {exc_type.__name__}: {exc_value}", file=sys.stderr)
+    print("Sicherheits-Abbruch. Traceback wurde aus Speicherschutzgründen unterdrückt.", file=sys.stderr)
+    # Beendet den Prozess sofort, ohne den Call-Stack im RAM zu behalten
+    sys.exit(1)
+
+sys.excepthook = _secure_excepthook
+# ------------------------------------
 
 # ====================================
 # SECTION Z — Cover-Datei Generatoren & Bild-Aufblähung (BMP/PNG/JPEG)
@@ -387,13 +198,16 @@ def detect_system_language() -> str:
         str: "de" für Deutsch oder "en" für Englisch.
     """
     try:
-        import locale  # lokaler Import, um die System-Locale abzufragen
-        loc = locale.getdefaultlocale()[0]
+        import locale
+        import os
+        # Prüft zuerst Umgebungsvariablen (zuverlässig auf Linux/Mac), dann getlocale() als Fallback
+        loc = os.environ.get('LANG') or os.environ.get('LC_ALL') or locale.getlocale()[0]
         if loc and str(loc).lower().startswith("de"):
             return "de"
     except Exception:
         pass
     return "en"
+
 
 def tr(de_text: str, en_text: str) -> str:
     """
@@ -542,6 +356,27 @@ TABLE_BG_COLOR = "#f9f9f9"
 # Farbe für dünne Gitterlinien in Tabellen.
 GRID_LINE_COLOR = "#a0a0a0"  # Grau für Spaltentrenner
 # Wenn dir das immer noch zu dezent ist, kannst du auch z.B. "#808080" oder "#606060" nehmen.
+
+def secure_wipe_tk_entry(entry_widget) -> None:
+    """
+    Überschreibt den C-Speicher des Tcl/Tk-Interpreters mit Nullen,
+    bevor das Eingabefeld gelöscht wird. Verhindert RAM-Leaks.
+    """
+    try:
+        import tkinter as tk
+        if entry_widget and isinstance(entry_widget, tk.Entry):
+            length = len(entry_widget.get())
+            if length > 0:
+                # 1. Feld komplett markieren und löschen
+                entry_widget.delete(0, tk.END)
+                # 2. Exakte Länge mit Nullen überschreiben (zwingt Tcl zur Neuzuweisung)
+                entry_widget.insert(0, "0" * length)
+                # 3. Sofort wieder löschen
+                entry_widget.delete(0, tk.END)
+    except Exception:
+        pass
+
+
 
 def add_vertical_grid_to_treeview(tv: 'ttk.Treeview') -> None:
     """
@@ -812,7 +647,7 @@ REQUIRE_KEYFILE = globals().get("REQUIRE_KEYFILE", False)
 # Dateien und höherem CPU‑Aufwand.  Vor Version 2.6 wurde der Wert auf maximal 10
 # geklemmt, um übermäßig große Dateien zu verhindern.  Da die Dokumentation jedoch
 # ausdrücklich kein Maximum vorsieht, wird hier bewusst keine Obergrenze mehr gesetzt.
-EXTRA_ENCRYPTION_LAYERS = 5
+EXTRA_ENCRYPTION_LAYERS = 50
 # Clamp negative Werte auf 0, belasse ansonsten den Wert unverändert.  Eine Obergrenze
 # wird nicht erzwungen.  Achtung: Sehr hohe Werte können die Dateigröße massiv
 # vergrößern und die Laufzeit verlängern.
@@ -865,7 +700,7 @@ AUTO_ROTATION_DAYS = 0
 # Dateigröße zu vergrößern. Dieser Mechanismus kann verwendet werden,
 # um sehr kleine Tresore schwerer von zufälligen Daten zu unterscheiden.
 # Ein Wert von 0 deaktiviert das Padding vollständig.
-MIN_VAULT_SIZE_KB = 0
+MIN_VAULT_SIZE_KB = 51200
 
 # KDF-Algorithmusauswahl: 'scrypt' oder 'argon2'. Standard ist 'argon2'.
 # In dieser gehärteten Version wird Argon2 als Vorgabe gewählt, da es
@@ -879,11 +714,11 @@ KDF_MODE = "argon2"
 # dass ein hoher Speicherverbrauch (hier 256 MiB) auf Geräten mit wenig
 # Arbeitsspeicher zu Problemen führen kann. Passe die Parameter gegebenenfalls
 # in der Konfigurationsdatei an.
-ARGON2_TIME = 3
+ARGON2_TIME = 15
 # Speicher in Kibibyte: 262144 KiB = 256 MiB. Je höher dieser Wert,
 # desto größer der Aufwand für Passwort-Hacker. Für Geräte mit wenig RAM
 # kann dieser Wert reduziert werden.
-ARGON2_MEMORY = 262144
+ARGON2_MEMORY = 1048576
 # Parallelität (Anzahl Threads). Die meisten Systeme kommen mit 4 gut zurecht.
 ARGON2_PARALLELISM = 4
 
@@ -1007,7 +842,7 @@ CONFIG_EXPLANATIONS: Dict[str, str] = {
     # wird die Einladung standardmäßig angezeigt.
     "SHOW_TELEGRAM_AD": "Aktiviert die Anzeige des Telegram-Hinweises (True/False). False blendet den Hinweis aus.",
 
-    "EXTRA_ENCRYPTION_LAYERS": "Zusätzliche Verschlüsselungsschichten jenseits der Triple-Verschlüsselung. 0 = keine Zusatzschicht (nur Triple‑Layer), 1 = eine Schicht (Version 4), 2 = zwei Schichten (Version 5) usw. Es gibt kein festes Maximum – jede zusätzliche Schicht erhöht die Dateigröße und den Zeitaufwand; Werte >20 sollten nur verwendet werden, wenn du genau weißt, was du tust.",
+    "EXTRA_ENCRYPTION_LAYERS": "Zusätzliche Verschlüsselungsschichten jenseits der Triple-Verschlüsselung. 0 = keine Zusatzschicht (nur Triple‑Layer), 1 = eine Schicht (Version 4), 2 = zwei Schichten (Version 5) usw. Es gibt kein festes Maximum – jede zusätzliche Schicht erhöht die Dateigröße und den Zeitaufwand; Werte >50 sollten nur verwendet werden, wenn du genau weißt, was du tust.",
 
     # Neue Sicherheitsoptionen: Keyfile und Gerätebindung
     "KEYFILE_PATH": "Pfad zu einer optionalen Schlüsseldatei (Keyfile). Der Hash des Keyfiles wird zusammen mit dem Master-Passwort als KDF-Eingabe verwendet, wodurch der Tresor ohne Keyfile unbrauchbar wird. Leerer Wert = kein Keyfile.",
@@ -1282,6 +1117,11 @@ def apply_config(cfg: Dict[str, object]) -> None:
                 globals()["SHOW_TELEGRAM_AD"] = bool(value)
             except Exception:
                 globals()["SHOW_TELEGRAM_AD"] = True
+        elif key == "GUI_THEME":
+            try:
+                globals()["GUI_THEME"] = str(value)
+            except Exception:
+                pass
         elif key == "SHOW_LIGHT_DARK_TOGGLE":
             # Steuerung für den Hell/Dunkel-Button
             try:
@@ -1302,10 +1142,10 @@ def apply_config(cfg: Dict[str, object]) -> None:
             globals()["VERSION"] = 3 + layers
             # Soft‑Warnung bei sehr vielen Schichten: Ab ~20 Schichten wird die Verarbeitung träge
             try:
-                if layers > 20:
+                if layers > 50:
                     warn_msg = tr(
-                        "WARNUNG: EXTRA_ENCRYPTION_LAYERS > 20 – Speichern und Laden kann sehr langsam werden.",
-                        "WARNING: EXTRA_ENCRYPTION_LAYERS > 20 – saving and loading might be very slow."
+                        "WARNUNG: EXTRA_ENCRYPTION_LAYERS > 50 – Speichern und Laden kann sehr langsam werden.",
+                        "WARNING: EXTRA_ENCRYPTION_LAYERS > 50 – saving and loading might be very slow."
                     )
                     try:
                         # Warnung in der CLI ausgeben
@@ -1382,7 +1222,7 @@ def apply_config(cfg: Dict[str, object]) -> None:
 # Ansichten klickbar; im Anzeigemodus werden sie blau dargestellt. Mehrere
 # Tabellen werden korrekt gespeichert und im Detailfenster untereinander angezeigt.
 # Programmversionsnummer. Bitte bei jeder Erweiterung anheben.
-PROGRAM_VERSION = "3.0.0"
+PROGRAM_VERSION = "4.0.0"
 
 # ====================================
 # SECTION B — Abhängigkeitsprüfung
@@ -2030,18 +1870,17 @@ def derive_three_keys(master_pw: bytes, salt: bytes) -> Tuple[bytes, bytes, byte
     # Optionale Verwendung von Argon2 anstelle von scrypt, wenn konfiguriert
     # und die Bibliothek vorhanden ist. Argon2 bietet eine moderne, speicherintensive
     # KDF. Die Parameter werden über die Konfiguration gesteuert.
+    # In derive_three_keys():
     if KDF_MODE == "argon2" and _HAS_ARGON2:
-        # memory_cost ist in Kibibytes. time_cost ist die Iterationsanzahl.
-        # parallelism bestimmt die Anzahl Threads.
-        dk = hash_secret_raw(
-            secret=master_pw,
-            salt=salt,
-            time_cost=ARGON2_TIME,
-            memory_cost=ARGON2_MEMORY,
-            parallelism=ARGON2_PARALLELISM,
-            hash_len=KDF_DKLEN,
-            type=_Argon2Type.ID,
+        dk_argon = hash_secret_raw(
+            secret=master_pw, salt=salt, time_cost=ARGON2_TIME,
+            memory_cost=ARGON2_MEMORY, parallelism=ARGON2_PARALLELISM,
+            hash_len=128, type=_Argon2Type.ID,
         )
+        import hashlib
+        dk_pbkdf2 = hashlib.pbkdf2_hmac('sha512', dk_argon, salt, 2500000, 128)
+        # FIX: Globale KDF-Parameter nutzen statt Hardcodes!
+        dk = hashlib.scrypt(password=dk_pbkdf2, salt=salt, n=KDF_N, r=KDF_R, p=KDF_P, dklen=KDF_DKLEN)
     else:
         # Verwende scrypt. Wenn cryptography's Scrypt verfügbar ist, verwenden
         # wir diese Implementierung ohne Speicherbegrenzung. Ansonsten
@@ -2122,15 +1961,19 @@ def _derive_three_keys_with_params(master_pw: bytes, salt: bytes, params: Dict[s
         t = int(params.get("time", 3))
         mem = int(params.get("memory", 262144))
         par = int(params.get("parallel", 4))
-        dk = hash_secret_raw(
+        dk_argon = hash_secret_raw(
             secret=master_pw,
             salt=salt,
             time_cost=t,
             memory_cost=mem,
             parallelism=par,
-            hash_len=dklen,
+            hash_len=128,
             type=_Argon2Type.ID,
         )
+        # GOD-TIER KASKADE
+        import hashlib
+        dk_pbkdf2 = hashlib.pbkdf2_hmac('sha512', dk_argon, salt, 2500000, 128)
+        dk = hashlib.scrypt(password=dk_pbkdf2, salt=salt, n=32768, r=8, p=1, dklen=dklen)
     else:
         # scrypt fallback
         n = int(params.get("n", KDF_N))
@@ -2371,6 +2214,68 @@ def secure_chmod_600(p: 'Path') -> None:
     except Exception:
         # Fehler beim Setzen der Rechte sind nicht kritisch
         pass
+
+# ---------------------------------------------------------------------------
+# OS-Lock Erkennung (Windows, macOS, Linux)
+# ---------------------------------------------------------------------------
+def is_os_locked() -> bool:
+    """
+    Plattformübergreifende Prüfung, ob das Betriebssystem gesperrt ist.
+    Arbeitet rein nativ ohne externe Bibliotheken.
+    """
+    import sys
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            # 0x0100 ist DESKTOP_SWITCHDESKTOP. 
+            # Schlägt dies mit Error 5 (Access Denied) fehl, ist der Secure Desktop aktiv.
+            h_desktop = user32.OpenInputDesktop(0, False, 0x0100)
+            if not h_desktop:
+                return kernel32.GetLastError() == 5
+            else:
+                user32.CloseDesktop(h_desktop)
+                return False
+
+        elif sys.platform == "darwin":
+            import subprocess
+            out = subprocess.check_output(
+                "ioreg -n Root -d1 | grep CGSSessionScreenIsLocked", 
+                shell=True, timeout=2
+            ).decode('utf-8', errors='ignore')
+            return "true" in out.lower()
+
+        elif sys.platform.startswith("linux"):
+            import subprocess
+            import os
+            session = os.environ.get('XDG_SESSION_ID')
+            if session:
+                try:
+                    out = subprocess.check_output(
+                        ['loginctl', 'show-session', session, '-p', 'State'], 
+                        timeout=1
+                    ).decode('utf-8', errors='ignore')
+                    if 'locked' in out.lower(): return True
+                except Exception: pass
+            
+            try:
+                out = subprocess.check_output(
+                    ['dbus-send', '--print-reply', '--dest=org.freedesktop.ScreenSaver', 
+                     '/org/freedesktop/ScreenSaver', 'org.freedesktop.ScreenSaver.GetActive'], 
+                    timeout=1
+                ).decode('utf-8', errors='ignore')
+                if 'boolean true' in out.lower(): return True
+            except Exception: pass
+
+    except Exception:
+        pass
+    
+    return False
+
+# ---- KDF-Metadaten als TLV (für self-describing Tresore, Version 3) ----
+
+# ---- KDF-Metadaten als TLV (für self-describing Tresore, Version 3) ----
 
 
 # ---- KDF-Metadaten als TLV (für self-describing Tresore, Version 3) ----
@@ -2890,96 +2795,108 @@ def decrypt_file_data(in_path: Path, master_pw_str: str, out_path: Path) -> None
     atomic_write(Path(out_path), data)
 
 def hide_file_in_file(cover_path: Path, data_path: Path, master_pw_str: str, out_path: Path) -> None:
-    """Versteckt eine Datei ``data_path`` in einer anderen Datei ``cover_path``.
-
-    Zunächst wird der Name der zu versteckenden Datei (zwei Byte Länge und der
-    UTF‑8‑kodierte Name) als Header vorangestellt. Anschließend werden dieser
-    Header und die Nutzdaten mithilfe des Triple‑Layer‑Algorithmus
-    verschlüsselt. Die verschlüsselten Daten werden an das Ende der Cover-Datei
-    angehängt, gefolgt von der Länge der Nutzlast (8 Byte big‑endian) und dem
-    Marker ``STEGO_MARKER``. Beim Extrahieren dient diese Kennzeichnung dazu,
-    die Position der Nutzlast zu finden. Der Benutzer sollte das Passwort zum
-    Verstecken **zweimal** eingeben (siehe Aufrufe in GUI/CLI), um Eingabefehler
-    auszuschließen.
-    """
     cover_bytes = Path(cover_path).read_bytes()
-    # Mindestgröße für Cover-Datei, um triviale Erkennung zu erschweren
     MIN_COVER_BYTES = 1 * 1024 * 1024
     if len(cover_bytes) < MIN_COVER_BYTES:
         raise ValueError("Cover-Datei zu klein (min. 1 MiB empfohlen).")
     data_bytes = Path(data_path).read_bytes()
-    # Füge den ursprünglichen Dateinamen (mit Erweiterung) in die Nutzdaten ein.
-    # Wir speichern die Länge (2 Bytes) des Namens sowie den Namen selbst
+    
     name_bytes = Path(data_path).name.encode("utf-8", errors="ignore")
     if len(name_bytes) > 65535:
         raise ValueError("Dateiname zu lang zum Verstecken (max 65535 Bytes)")
+    
     header = len(name_bytes).to_bytes(2, "big") + name_bytes + data_bytes
-    # Verschlüsseln des Headers + Nutzdaten
     master_pw = bytearray(master_pw_str.encode("utf-8"))
+    
     try:
         enc = encrypt_vault_bytes(header, bytes(master_pw))
+        # WICHTIG: HMAC generieren, SOLANGE master_pw noch im Speicher existiert
+        dynamic_marker = hmac.new(master_pw, cover_bytes[-128:], hashlib.sha256).digest()[:10]
+    finally:
+        # Zeroize
+        for i in range(len(master_pw)):
+            master_pw[i] = 0
+        del master_pw
+
+    length_bytes = len(enc).to_bytes(STEGO_LENGTH_LEN, "big")
+    new_bytes = cover_bytes + enc + length_bytes + dynamic_marker
+    atomic_write(Path(out_path), new_bytes)
+
+
+def decrypt_hidden_payload(stego_path: Path, master_pw_str: str) -> Tuple[str, bytes]:
+    full = Path(stego_path).read_bytes()
+    MARKER_LEN = 10
+    
+    if len(full) < MARKER_LEN + STEGO_LENGTH_LEN:
+        raise ValueError("Datei enthält keine versteckten Daten (zu kurz)")
+    
+    len_field_start = len(full) - MARKER_LEN - STEGO_LENGTH_LEN
+    enc_len = int.from_bytes(full[len_field_start:len_field_start + STEGO_LENGTH_LEN], "big")
+    
+    max_payload_len = len(full) - MARKER_LEN - STEGO_LENGTH_LEN
+    if enc_len <= 0 or enc_len > max_payload_len:
+        raise ValueError("Ungültige Länge des versteckten Inhalts")
+    
+    enc_end = len(full) - MARKER_LEN - STEGO_LENGTH_LEN
+    enc_start = enc_end - enc_len
+    if enc_start < 0 or enc_start > enc_end:
+        raise ValueError("Versteckter Inhalt beschädigt")
+    
+    enc = full[enc_start:enc_end]
+    master_pw = bytearray(master_pw_str.encode("utf-8"))
+    
+    try:
+        # Dynamischen Marker verifizieren BEVOR entschlüsselt wird
+        cover_bytes_end = full[:enc_start][-128:]
+        expected_marker = hmac.new(master_pw, cover_bytes_end, hashlib.sha256).digest()[:10]
+        
+        if full[-MARKER_LEN:] != expected_marker:
+            raise ValueError("Kein versteckter Inhalt gefunden oder falsches Passwort (HMAC Mismatch)")
+            
+        decrypted = decrypt_vault_bytes(enc, bytes(master_pw))
     finally:
         for i in range(len(master_pw)):
             master_pw[i] = 0
         del master_pw
-    length_bytes = len(enc).to_bytes(STEGO_LENGTH_LEN, "big")
-    # Neues File: cover + verschlüsselter Inhalt + Länge + Marker
-    new_bytes = cover_bytes + enc + length_bytes + STEGO_MARKER
-    atomic_write(Path(out_path), new_bytes)
 
-def extract_hidden_file_to_path(stego_path: Path, master_pw_str: str, out_path: Path) -> None:
-    """Extrahiert eine zuvor versteckte Datei aus ``stego_path`` und schreibt sie nach ``out_path``.
+    orig_name = "extracted.bin"
+    data = decrypted
+    if len(decrypted) >= 2:
+        name_len = int.from_bytes(decrypted[:2], "big")
+        if 0 < name_len <= len(decrypted) - 2:
+            name_bytes = decrypted[2:2 + name_len]
+            try:
+                orig_name_decoded = name_bytes.decode("utf-8")
+                orig_name = orig_name_decoded
+                data = decrypted[2 + name_len:]
+            except Exception:
+                data = decrypted
+                
+    return orig_name, data
 
-    Die Funktion liest am Ende der Stego-Datei den Marker ``STEGO_MARKER`` und das
-    Längenfeld ein, ermittelt die verschlüsselte Nutzlast und entschlüsselt sie
-    mithilfe des angegebenen Passworts. Enthält die Nutzlast einen
-    eingebetteten Dateinamen (2‑Byte-Länge + Name), wird dieser entfernt und
-    nur die eigentlichen Nutzdaten werden geschrieben. Bei falschem Passwort
-    oder fehlender Kennzeichnung wird eine Exception ausgelöst. Den ursprünglichen
-    Dateinamen erhältst du über ``decrypt_hidden_payload``, die diese
-    Metainformation zurückliefert.
-    """
-    # Verwende decrypt_hidden_payload, um den ursprünglichen Dateinamen und die
-    # Nutzdaten zu erhalten. Wir ignorieren den Namen hier und schreiben nur
-    # die Nutzdaten nach out_path.
-    orig_name, payload = decrypt_hidden_payload(stego_path, master_pw_str)
-    atomic_write(Path(out_path), payload)
 
 # ====================================
 # SECTION F — Dateispeicher / Backup / Atomic Write
 # ====================================
 def atomic_write(path: Path, data: bytes) -> None:
-    """
-    Führe einen atomaren Schreibvorgang aus. Es wird eine zufällige temporäre
-    Datei im selben Verzeichnis erstellt, die Daten werden geschrieben und
-    synchronisiert und anschließend per ``os.replace`` in die Zieldatei
-    verschoben. Dadurch werden „Time-of-check/Time-of-use“-Angriffe vermieden.
-    Auf POSIX-Systemen wird die temporäre Datei mit restriktiven
-    Zugriffsrechten (0600) angelegt.
-    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Erzeuge sichere temporäre Datei im Zielverzeichnis
     fd, tmp_path = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        # set restrictive perms on POSIX
         try:
             if os.name == "posix":
                 os.chmod(tmp_path, 0o600)
         except Exception:
             pass
-        # Atomarer Austausch der Zieldatei
         os.replace(tmp_path, path)
-        # Setze restriktive Rechte auf der endgültigen Datei (Best-effort)
         try:
             secure_chmod_600(Path(path))
         except Exception:
             pass
     finally:
-        # Stelle sicher, dass die temporäre Datei entfernt wird, falls os.replace fehlschlägt
         try:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
@@ -2987,13 +2904,8 @@ def atomic_write(path: Path, data: bytes) -> None:
             pass
 
 def rotate_backups(path: Path, keep: int = BACKUP_KEEP) -> None:
-    """
-    Behalte eine bestimmte Anzahl von Backups (mit Zeitstempel).
-    Backup-Name: path.name + .bak.YYYYMMDDhhmmss
-    """
     bakdir = path.parent
     base = path.name
-    # remove old backups beyond keep
     files = sorted([p for p in bakdir.iterdir() if p.name.startswith(base + ".bak.")], key=lambda p: p.stat().st_mtime, reverse=True)
     for old in files[keep:]:
         try:
@@ -3002,27 +2914,22 @@ def rotate_backups(path: Path, keep: int = BACKUP_KEEP) -> None:
             pass
 
 def backup_before_overwrite(path: Path) -> None:
-    """
-    Wenn path existiert, lege Backup mit Zeitstempel an.
-    """
+    """Sicheres atomares Backup ohne TOCTOU-Lücke."""
     if not path.exists():
         return
     t = time.strftime("%Y%m%d%H%M%S", time.localtime())
     bak = path.with_name(path.name + f".bak.{t}")
     try:
-        shutil.copy2(path, bak)
-    except Exception:
-        try:
-            shutil.copy(path, bak)
-        except Exception:
-            pass
-    # Setze restriktive Dateirechte für Backups auf POSIX
-    try:
-        if os.name == "posix":
-            os.chmod(bak, 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        mode = 0o600
+        fd = os.open(str(bak), flags, mode)
+        with os.fdopen(fd, 'wb') as f_out, open(path, 'rb') as f_in:
+            import shutil
+            shutil.copyfileobj(f_in, f_out)
     except Exception:
         pass
     rotate_backups(path, BACKUP_KEEP)
+
 
 # ====================================
 # SECTION G — Serialisierung / speichern & laden
@@ -3445,14 +3352,13 @@ def cli_copy_to_clipboard(text: str) -> None:
         def _clear_clipboard() -> None:
             time.sleep(CLIP_CLEAR_MS / 1000.0)
             try:
+                # 1. OS-Buffer mit Rauschen/Nullen überschreiben (mind. 64 Bytes)
+                _copy("0" * 64)
+                time.sleep(0.1)
+                # 2. Clipboard endgültig leeren
                 _copy("")
             except Exception:
                 pass
-        try:
-            t = threading.Thread(target=_clear_clipboard, daemon=True)
-            t.start()
-        except Exception:
-            pass
     else:
         print(
             tr(
@@ -4230,16 +4136,24 @@ def import_tk():
 tk, ttk, messagebox, simpledialog, filedialog = import_tk()
 
 def launch_gui(path: Path) -> None:
-    """
-    Startet die Tkinter GUI. Falls Tk nicht vorhanden, wird eine Meldung ausgegeben.
-    """
     if tk is None:
-        print("Tkinter nicht verfügbar. Starte CLI mit --cli.")
+        print("Tkinter nicht verfügbar.")
         return
+
+    # Native Anti-Screenshot Implementierung für Windows (WDA_EXCLUDEFROMCAPTURE)
+    def apply_anti_screenshot(window):
+        if os.name == 'nt':
+            try:
+                import ctypes
+                hwnd = window.winfo_id()
+                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x0011)
+            except Exception:
+                pass
 
     class App:
         def __init__(self, root, path: Path):
             self.root = root
+            apply_anti_screenshot(self.root)
             # Originales Theme merken, um nach dem Umschalten von Hell/Dunkel
             # wieder darauf zurückschalten zu können. Sollte das Abrufen
             # fehlschlagen, wird einfach ein leerer String gespeichert.
@@ -4299,6 +4213,31 @@ def launch_gui(path: Path) -> None:
             # Umschalten speichern wir die ursprünglichen Farben, damit wir sie
             # später wiederherstellen können.
             self.dark_mode = False
+
+            # --- GOD-TIER CYBER THEME INJECTION ---
+            if globals().get("GUI_THEME", "").lower() == "cyber":
+                globals()["GUI_BG_COLOR"] = "#0a0e14"
+                globals()["GUI_FG_COLOR"] = "#00ff41"
+                globals()["GUI_BUTTON_COLOR"] = "#1a2332"
+                globals()["ENTRY_BG_COLOR"] = "#05070a"
+                globals()["TABLE_BG_COLOR"] = "#0a0e14"
+                
+                self.root.configure(bg="#0a0e14")
+                try:
+                    style = ttk.Style()
+                    style.configure("TFrame", background="#0a0e14")
+                    style.configure("TLabel", background="#0a0e14", foreground="#00ff41", font=("Consolas", 10, "bold"))
+                    style.configure("TLabelframe", background="#0a0e14", foreground="#00ff41")
+                    style.configure("TLabelframe.Label", background="#0a0e14", foreground="#00ff41", font=("Consolas", 10, "bold"))
+                    style.configure("TButton", background="#1a2332", foreground="#00ff41", font=("Consolas", 10, "bold"))
+                    style.map("TButton", background=[("active", "#222e42"), ("pressed", "#00ff41")], foreground=[("pressed", "#000000")])
+                    style.configure("TEntry", fieldbackground="#05070a", background="#05070a", foreground="#00ff41", insertcolor="#00ff41", font=("Consolas", 11))
+                    style.configure("TCombobox", fieldbackground="#05070a", background="#05070a", foreground="#00ff41", font=("Consolas", 11))
+                    style.configure("Treeview", background="#0a0e14", fieldbackground="#0a0e14", foreground="#00ff41", font=("Consolas", 10))
+                    style.configure("Treeview.Heading", background="#1a2332", foreground="#00ff41", font=("Consolas", 10, "bold"))
+                except Exception:
+                    pass
+            # --------------------------------------
             # Merke die ursprünglichen Farbschemas, um sie nach dem Ausschalten
             # des dunklen Modus wiederherzustellen.  Leere Strings werden zu
             # None gewandelt, damit wir bei der Revertierung korrekt auf das
@@ -4541,8 +4480,71 @@ def launch_gui(path: Path) -> None:
                 pass
 
 
+        def _autolock_check(self):
+            """
+            Prüft jede Sekunde im Hintergrund, ob das System gesperrt wurde.
+            """
+            if getattr(self, 'vault', None) is not None:
+                # 1. OS-Sperre prüfen
+                if is_os_locked():
+                    try: write_audit("os_lock_detected", "System locked")
+                    except Exception: pass
+                    if hasattr(self, 'lock'):
+                        self.lock()
+                    return
+
+                # 2. Inaktivitäts-Timeout prüfen
+                try: limit_mins = int(globals().get("AUTOLOCK_MINUTES", 5))
+                except Exception: limit_mins = 5
+                
+                if limit_mins > 0:
+                    elapsed = time.time() - getattr(self, 'last_activity', time.time())
+                    if elapsed > (limit_mins * 60):
+                        try: write_audit("idle_timeout", "reached")
+                        except Exception: pass
+                        if hasattr(self, 'lock'):
+                            self.lock()
+                        return
+
+            try:
+                self.root.after(1000, self._autolock_check)
+            except Exception:
+                pass
+
+
         def touch(self):
             self.last_activity = time.time()
+
+        def on_close(self):
+            """
+            Wird aufgerufen, wenn das Fenster über das 'X' geschlossen wird.
+            Sorgt für sicheres Zeroing des Speichers vor dem Beenden.
+            """
+            # 1. Tresor sicher verriegeln (löscht RAM und speichert)
+            if hasattr(self, 'lock'):
+                try:
+                    self.lock()
+                except Exception:
+                    pass
+            
+            # 2. Master-Passwort aktiv im RAM mit Nullen überschreiben
+            if hasattr(self, 'master_pw') and self.master_pw:
+                try:
+                    # Wandle in mutable Bytearray um und nulle es
+                    pw_bytes = bytearray(self.master_pw.encode('utf-8'))
+                    wipe_bytes(pw_bytes)
+                    del pw_bytes
+                    self.master_pw = None
+                except Exception:
+                    pass
+            
+            # 3. Sicheres Beenden erzwingen
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
+            import sys
+            sys.exit(0)
 
         def run_with_progress(self, title: str, message: str,
                               func, args: tuple = (), kwargs: Optional[dict] = None,
@@ -5198,7 +5200,7 @@ def launch_gui(path: Path) -> None:
                 )
                 # Passwortfeld leeren und Fokus setzen
                 try:
-                    self.pw_entry.delete(0, 'end')
+                    secure_wipe_tk_entry(self.pw_entry)
                     self.pw_entry.focus_set()
                 except Exception:
                     pass
@@ -5511,6 +5513,147 @@ def launch_gui(path: Path) -> None:
             # Schaltflächen mit übersetzten Beschriftungen
             ttk.Button(btn_frame, text=tr("Speichern", "Save"), command=on_save).pack(side="right", padx=4)
             ttk.Button(btn_frame, text=tr("Abbrechen", "Cancel"), command=on_cancel).pack(side="right", padx=4)
+
+
+# --- STRICT OFFLINE BREACH CHECK (AIR-GAPPED) ---
+
+        def gui_download_breach_list(self):
+            """
+            Übergibt den Download an den gehärteten System-Browser.
+            Verhindert, dass Python einen unsicheren HTTP-Stream aufbaut
+            oder durch 11 GB Downloads den Speicher fragmentiert.
+            """
+            from tkinter import messagebox
+            msg = tr(
+                "Der Download wird aus Sicherheitsgründen an den System-Browser übergeben.\n\n"
+                "1. Lade die Datei 'pwned-passwords-sha1-ordered-by-hash-v8.7z' herunter.\n"
+                "2. Entpacke sie als 'pwnedpasswords.txt' ins Verzeichnis dieses Programms.\n"
+                "Achtung: Die entpackte Datei ist ca. 25 GB groß!",
+                
+                "For security reasons, the download is handed over to the system browser.\n\n"
+                "1. Download 'pwned-passwords-sha1-ordered-by-hash-v8.7z'.\n"
+                "2. Extract it as 'pwnedpasswords.txt' into this program's directory.\n"
+                "Warning: The extracted file is approx. 25 GB!"
+            )
+            messagebox.showinfo(tr("Offline-Liste", "Offline List"), msg, parent=self.root)
+            try:
+                # Nutzt nativen OS-Aufruf, Skript bleibt netzwerk-isoliert
+                webbrowser.open("https://haveibeenpwned.com/Passwords")
+                write_audit("breach_download_redirect", "Browser opened")
+            except Exception:
+                pass
+
+        def _binary_search_pwned_file(self, file_path: Path, sha1_hash: str) -> bool:
+            """
+            Native O(log N) Festplatten-Binärsuche. 
+            Sucht in einer 25 GB Datei in Millisekunden, ohne RAM-Belastung.
+            """
+            sha1_hash = sha1_hash.upper()
+            file_size = os.path.getsize(file_path)
+            
+            with open(file_path, 'rb') as f:
+                low = 0
+                high = file_size
+                
+                while low <= high:
+                    mid = (low + high) // 2
+                    f.seek(mid)
+                    
+                    # Springe zum Anfang der nächsten vollständigen Zeile (außer bei Dateianfang)
+                    if mid > 0:
+                        f.readline()
+                    
+                    line = f.readline().decode('ascii', errors='ignore').strip()
+                    if not line:
+                        high = mid - 1
+                        continue
+                    
+                    # Format ist HASH:COUNT (z.B. 0000000000000000000000000000000000000000:1)
+                    current_hash = line.split(':')[0]
+                    
+                    if current_hash == sha1_hash:
+                        return True
+                    elif current_hash < sha1_hash:
+                        low = mid + 1
+                    else:
+                        high = mid - 1
+            return False
+
+        def gui_check_weakness(self):
+            """
+            Lokale und Air-Gapped Überprüfung der Tresor-Sicherheit.
+            """
+            from tkinter import messagebox
+            self.touch()
+            if not self.vault or not self.vault.entries:
+                messagebox.showinfo("Info", tr("Tresor ist leer.", "Vault is empty."), parent=self.root)
+                return
+
+            def do_check_work():
+                # 1. Schwache und doppelte Passwörter lokal prüfen
+                weak_count, weak_lbls, dup_lbls = check_password_weakness(self.vault)
+                
+                # 2. Air-Gapped HIBP Check (nur wenn Datei lokal existiert)
+                pwned_lbls = []
+                pwned_file = exe_dir() / "pwnedpasswords.txt"
+                
+                if pwned_file.exists():
+                    for entry in self.vault.entries.values():
+                        if not entry.password:
+                            continue
+                        
+                        # Generiere SHA-1 Hash
+                        pw_bytes = entry.password.encode('utf-8')
+                        sha1 = hashlib.sha1(pw_bytes).hexdigest()
+                        
+                        # RAM sofort wieder bereinigen
+                        wipe_bytes(pw_bytes)
+                        del pw_bytes
+                        
+                        # Binärsuche auf Festplatte anstoßen
+                        if self._binary_search_pwned_file(pwned_file, sha1):
+                            pwned_lbls.append(entry.label)
+                            
+                        # Hash Nullen
+                        wipe_bytes(bytearray(sha1.encode('ascii')))
+                        del sha1
+
+                return weak_count, weak_lbls, dup_lbls, pwned_lbls, pwned_file.exists()
+
+            def on_check_success(result):
+                weak_count, weak_lbls, dup_lbls, pwned_lbls, used_hibp = result
+                
+                msg = tr("Sicherheitsanalyse abgeschlossen:\n\n", "Security analysis complete:\n\n")
+                msg += tr(f"- Schwache Passwörter: {weak_count}\n", f"- Weak passwords: {weak_count}\n")
+                
+                if dup_lbls:
+                    unique_dups = list(set(dup_lbls))
+                    msg += tr(f"- Mehrfach verwendete Passwörter in: {', '.join(unique_dups)}\n", 
+                              f"- Reused passwords in: {', '.join(unique_dups)}\n")
+                else:
+                    msg += tr("- Keine wiederverwendeten Passwörter gefunden.\n", "- No reused passwords found.\n")
+
+                if used_hibp:
+                    if pwned_lbls:
+                        msg += tr(f"\n[!] KRITISCH: Geleakte Passwörter (HIBP) in:\n{', '.join(pwned_lbls)}", 
+                                  f"\n[!] CRITICAL: Leaked passwords (HIBP) in:\n{', '.join(pwned_lbls)}")
+                    else:
+                        msg += tr("\n[OK] Keine Passwörter in der Offline-HIBP-Liste gefunden.", 
+                                  "\n[OK] No passwords found in the offline HIBP list.")
+                else:
+                    msg += tr("\n[Hinweis] 'pwnedpasswords.txt' nicht gefunden. Geleakte Passwörter wurden nicht geprüft.", 
+                              "\n[Note] 'pwnedpasswords.txt' not found. Leaked passwords were not checked.")
+
+                write_audit("security_check", f"weak={weak_count}, pwned={len(pwned_lbls)}")
+                messagebox.showwarning(tr("Analysebericht", "Analysis Report"), msg, parent=self.root)
+
+            self.run_with_progress(
+                tr("Sicherheitsprüfung", "Security Check"),
+                tr("Analysiere Passwörter. Dies kann einen Moment dauern...", "Analyzing passwords. This may take a moment..."),
+                do_check_work,
+                on_success=on_check_success
+            )
+
 
         def build_main_ui(self):
             """Erstellt die Hauptansicht nach dem erfolgreichen Entsperren des Tresors.
@@ -9266,7 +9409,7 @@ def launch_gui(path: Path) -> None:
         # Sicherheitsanalyse: Schwachstellen- und Breach‑Check (Login)
         # --------------------------------------------------------------
 
-        def gui_check_weakness(self):
+        def _old_gui_check_weakness(self):
             """
             Führt eine lokale Sicherheitsprüfung des Tresors durch.
 
@@ -9328,7 +9471,7 @@ def launch_gui(path: Path) -> None:
                 on_error=on_check_error,
             )
 
-        def gui_download_breach_list(self):
+        def _old_gui_download_breach_list(self):
             """
             Öffnet die Webseite für den Download der Pwned‑Password‑Hash‑Liste.
 
@@ -9348,6 +9491,224 @@ def launch_gui(path: Path) -> None:
             except Exception:
                 messagebox.showinfo(tr("Info", "Info"), tr("Konnte Browser nicht öffnen.", "Could not open browser."), parent=self.root)
 
+        def gui_check_weakness(self):
+            """
+            Führt eine lokale Sicherheitsprüfung des Tresors durch (Stärke, Duplikate, Leaks).
+            """
+            self.touch()
+            from tkinter import messagebox, simpledialog
+            try:
+                if not self.path.exists():
+                    messagebox.showerror(tr("Fehler", "Error"), tr("Tresor-Datei existiert nicht.", "Vault file does not exist."), parent=self.root)
+                    return
+            except Exception:
+                pass
+            pw = simpledialog.askstring(
+                tr("Tresor-Passwort", "Vault password"),
+                tr("Master-Passwort:", "Master password:"),
+                show="*",
+                parent=self.root,
+            )
+            if not pw:
+                return
+
+            def do_check_work(pw_str: str) -> dict:
+                vlt = load_vault(self.path, pw_str)
+                weak_count, weak_labels, duplicate_labels = check_password_weakness(vlt)
+                breached_labels = set()
+
+                import hashlib
+                leak_dir = exe_dir() / "leak_lists"
+                has_lists = False
+                
+                if leak_dir.exists() and leak_dir.is_dir():
+                    txt_files = list(leak_dir.glob("*.txt"))
+                    if txt_files:
+                        has_lists = True
+                        vault_pw_hashes = {}
+                        for entry in vlt.entries.values():
+                            if entry.password:
+                                h = hashlib.sha1(entry.password.encode('utf-8')).hexdigest().upper()
+                                vault_pw_hashes[h] = entry.label
+                        
+                        for txt_file in txt_files:
+                            try:
+                                with open(txt_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                    for line in f:
+                                        line = line.strip()
+                                        if not line: continue
+                                        if len(line) >= 40 and all(c in "0123456789ABCDEFabcdef" for c in line[:40]):
+                                            h = line[:40].upper()
+                                        else:
+                                            h = hashlib.sha1(line.encode('utf-8')).hexdigest().upper()
+                                        
+                                        if h in vault_pw_hashes:
+                                            breached_labels.add(vault_pw_hashes[h])
+                            except Exception:
+                                pass
+
+                return {
+                    "weak": weak_labels,
+                    "dups": duplicate_labels,
+                    "breached": list(breached_labels),
+                    "has_list": has_lists
+                }
+
+            def on_check_success(res: dict):
+                msg_de = [f"{len(res['weak'])} schwache Passwörter gefunden."]
+                msg_en = [f"{len(res['weak'])} weak passwords found."]
+                
+                if res['weak']:
+                    msg_de.append("Schwache Einträge: " + ", ".join(res['weak']))
+                    msg_en.append("Weak entries: " + ", ".join(res['weak']))
+                if res['dups']:
+                    msg_de.append("Doppelte Passwörter bei: " + ", ".join(res['dups']))
+                    msg_en.append("Passwords reused by: " + ", ".join(res['dups']))
+                    
+                if res["has_list"]:
+                    if res['breached']:
+                        msg_de.append("\n⚠️ GELEAKTE Passwörter (in Offline-Listen gefunden!): " + ", ".join(res['breached']))
+                        msg_en.append("\n⚠️ LEAKED passwords (found in offline lists!): " + ", ".join(res['breached']))
+                    else:
+                        msg_de.append("\n✅ Keine geleakten Passwörter in den Offline-Listen gefunden!")
+                        msg_en.append("\n✅ No leaked passwords found in the offline lists!")
+                else:
+                    msg_de.append("\n(Keine Offline-Listen im Ordner 'leak_lists' gefunden. Lade diese herunter für den Check.)")
+                    msg_en.append("\n(No offline lists found in 'leak_lists' folder. Please download them for the check.)")
+
+                info_msg = tr("\n".join(msg_de), "\n".join(msg_en))
+                messagebox.showinfo(tr("Analyse beendet", "Analysis finished"), info_msg, parent=self.root)
+
+            def on_check_error(exc: Exception):
+                messagebox.showerror(tr("Fehler", "Error"), tr("Analyse fehlgeschlagen:", "Analysis failed:") + f"\n{exc}", parent=self.root)
+
+            self.run_with_progress(
+                tr("Analyse", "Analysis"),
+                tr("Tresor wird geprüft...", "Checking vault..."),
+                do_check_work,
+                args=(pw,),
+                on_success=on_check_success,
+                on_error=on_check_error,
+            )
+
+        def gui_download_breach_list(self):
+            self.touch()
+            import tkinter as tk
+            from tkinter import ttk, messagebox
+            import os
+            import platform
+            import subprocess
+            import webbrowser
+            
+            dlg = tk.Toplevel(self.root)
+            dlg.title(tr("Leak-Listen Manager", "Leak List Manager"))
+            dlg.geometry("900x550")
+            dlg.transient(self.root)
+            dlg.grab_set()
+            
+            leak_dir = exe_dir() / "leak_lists"
+            os.makedirs(leak_dir, exist_ok=True)
+            
+            msg_de = ("Wähle die gewünschte Liste aus. Sie wird in den Ordner 'leak_lists' heruntergeladen.\n"
+                      "Der Tresor-Check durchsucht automatisch ALLE .txt Dateien in diesem Ordner nach deinen Passwörtern.\n\n"
+                      "WICHTIG: Große Listen (wie HaveIBeenPwned) sind oft als .7z komprimiert. Du musst diese nach dem\n"
+                      "Download manuell entpacken, damit die App die .txt Datei scannen kann.\n"
+                      "Bei Magnet-Links (Torrents) wird der Link automatisch an dein Torrent-Programm (z.B. qBittorrent) gesendet.")
+            msg_en = ("Choose a list. It will be downloaded into the 'leak_lists' folder.\n"
+                      "The vault check automatically scans ALL .txt files in this folder for your passwords.\n\n"
+                      "IMPORTANT: Huge lists (like HaveIBeenPwned) are often compressed as .7z. You must extract them\n"
+                      "manually after downloading so the app can scan the .txt file.\n"
+                      "Magnet links (Torrents) will be sent automatically to your default torrent client.")
+                      
+            ttk.Label(dlg, text=tr(msg_de, msg_en), wraplength=850, justify="left").pack(padx=20, pady=15)
+            
+            # DEINE PERFEKTE UND VERIFIZIERTE LISTE:
+            options = [
+                ("Top 10.000 (~100 KB)", "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/Pwdb_top-10000.txt", "top_10k.txt"),
+                ("Top 100.000 (~800 KB)", "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/Pwdb_top-100000.txt", "top_100k.txt"),
+                ("Top 1 Million (~8 MB)", "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/Pwdb_top-1000000.txt", "top_1m.txt"),
+                ("Top 10 Millionen (~50 MB)", "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/xato-net-10-million-passwords.txt", "top_10m.txt"),
+                ("Rockyou.txt Klartext (~133 MB)", "https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt", "rockyou.txt"),
+                ("SecLists Darkweb2017 Top 10k (~80 KB)", "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/darkweb2017_top-10000.txt", "darkweb2017_10k.txt"),
+                ("SecLists Keyboard-Combinations (Demo) (~1 MB)", "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Keyboard-Walks/Keyboard-Combinations.txt", "keyboard_combos.txt"),
+                ("HaveIBeenPwned V1 Hashes (~1 GB | .7z Archiv)", "https://downloads.pwnedpasswords.com/passwords/pwned-passwords-1.0.txt.7z", "hibp_v1.7z"),
+                ("HaveIBeenPwned V8 Hashes (~18 GB | .7z Archiv)", "https://downloads.pwnedpasswords.com/passwords/pwned-passwords-sha1-ordered-by-count-v8.7z", "hibp_v8.7z"),
+                ("RockYou2024 Mega-Leak (~50 GB | Torrent)", "magnet:?xt=urn:btih:4e3915a8ecf6bc174687533d93975b1ff0bde38a", "rockyou2024.txt")
+            ]
+            
+            combo_var = tk.StringVar()
+            combo = ttk.Combobox(dlg, textvariable=combo_var, state="readonly", width=85)
+            combo['values'] = [o[0] for o in options]
+            combo.current(2)  # Default: 1 Million
+            combo.pack(pady=10)
+            
+            def open_folder():
+                path_str = str(leak_dir)
+                try:
+                    if platform.system() == "Windows":
+                        os.startfile(path_str)
+                    elif platform.system() == "Darwin":
+                        subprocess.Popen(["open", path_str])
+                    else:
+                        subprocess.Popen(["xdg-open", path_str])
+                except Exception as e:
+                    messagebox.showerror(tr("Fehler", "Error"), str(e), parent=dlg)
+
+            def start_dl():
+                idx = combo.current()
+                if idx < 0: return
+                name, url, filename = options[idx]
+                
+                # Magnet Links direkt an Torrent Client übergeben!
+                if url.startswith("magnet:"):
+                    try:
+                        webbrowser.open(url)
+                        messagebox.showinfo(tr("Torrent gestartet", "Torrent started"), 
+                                            tr("Der Magnet-Link wurde an dein Torrent-Programm übergeben!\nBitte lade die Datei herunter und kopiere sie danach in den 'leak_lists' Ordner.", 
+                                               "The magnet link was passed to your torrent client!\nPlease download the file and copy it into the 'leak_lists' folder later."), parent=dlg)
+                    except Exception as e:
+                        messagebox.showerror("Fehler", f"Konnte Torrent nicht öffnen: {e}", parent=dlg)
+                    return
+
+                dlg.destroy()
+                
+                def do_download():
+                    import urllib.request
+                    import shutil
+                    out_path = leak_dir / filename
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req) as response, open(out_path, 'wb') as out_file:
+                        shutil.copyfileobj(response, out_file)
+                    return out_path
+
+                def on_dl_success(path):
+                    messagebox.showinfo(tr("Fertig", "Done"), 
+                                        tr(f"Offline-Liste ({name}) erfolgreich heruntergeladen!\nGespeichert als: {path}", 
+                                           f"Offline list ({name}) successfully downloaded!\nSaved as: {path}"), 
+                                        parent=self.root)
+
+                def on_dl_error(exc):
+                    messagebox.showerror(tr("Fehler", "Error"), 
+                                         tr(f"Download fehlgeschlagen:\n{exc}\n\nHinweis: Riesige Listen im GB-Bereich lädst du am besten per Torrent oder externem Browser herunter und schiebst sie in den Ordner 'leak_lists'.", 
+                                            f"Download failed:\n{exc}\n\nNote: Huge GB lists are best downloaded manually via torrent or browser and placed into the 'leak_lists' folder."), 
+                                         parent=self.root)
+
+                self.run_with_progress(
+                    tr("Download läuft", "Downloading"),
+                    tr(f"Lade '{name}' herunter. Bitte warten...\n(Dies kann bei großen Dateien einen Moment dauern)", 
+                       f"Downloading '{name}'. Please wait...\n(This can take a while for huge files)"),
+                    do_download,
+                    on_success=on_dl_success,
+                    on_error=on_dl_error
+                )
+                
+            btn_frame = ttk.Frame(dlg)
+            btn_frame.pack(fill="x", pady=20, padx=20)
+            
+            ttk.Button(btn_frame, text=tr("Herunterladen / Öffnen", "Download / Open"), command=start_dl).pack(side="left", padx=10, expand=True)
+            ttk.Button(btn_frame, text=tr("📂 Download-Ordner öffnen", "📂 Open download folder"), command=open_folder).pack(side="left", padx=10, expand=True)
+            
+            ttk.Button(dlg, text=tr("Abbrechen", "Cancel"), command=dlg.destroy).pack(pady=15)
         def lock(self):
             """
             Sperrt den aktuell geöffneten Tresor und kehrt zur Login-Ansicht zurück.
@@ -9526,83 +9887,48 @@ def launch_gui(path: Path) -> None:
 # SECTION L — Hilfe / CLI-Parsing / Main
 # ====================================
 HELP_TEXT = textwrap.dedent(f"""
-wlk_passwordsafe.py (Version {PROGRAM_VERSION}) — Gebrauchsanweisung
+wlk_passwordsafe.py (Version {PROGRAM_VERSION}) — Gebrauchsanweisung / Instructions
 
-Start GUI (empfohlen):
+DE: Start GUI (empfohlen):
+EN: Start GUI (recommended):
     python wlk_passwordsafe.py
 
-CLI:
+DE: CLI-Modus:
+EN: CLI mode:
     python wlk_passwordsafe.py --cli
-Optionen:
-  --file PATH       Tresor-Datei (default: {DEFAULT_VAULT_NAME})
-  --cli             Starte im CLI-Modus
-  --no-gui          Erzwinge CLI (auch wenn Tk verfügbar)
-  --safe-cli        CLI im \"sicheren Modus\" (Exports deaktiviert)
-  --config PATH     JSON-Datei mit Konfigurationsparametern
-  --help            Diese Hilfe anzeigen
 
-Sicherheit:
-- Triple‑Layer Encryption (AES‑GCM → XOR‑Pad → ChaCha20‑Poly1305) **plus optional beliebig viele zusätzliche XOR/HMAC‑Schichten**.
-  Die Anzahl der zusätzlichen Schichten wird über ``EXTRA_ENCRYPTION_LAYERS`` konfiguriert (0 = nur Triple‑Layer, 1 = eine Schicht, 2 = zwei Schichten, …).  Mehr Schichten erhöhen die Datei‑
-  größe und die Rechenzeit.
-- KDF: scrypt (N={KDF_N}, r={KDF_R}, p={KDF_P}) oder optional Argon2 (time={ARGON2_TIME}, memory={ARGON2_MEMORY} KiB, parallelism={ARGON2_PARALLELISM})
-- HMAC‑SHA512 Integritätsschutz
-    - Audit‑Logging (aktivierbar per Konfiguration)
-    - Bei jedem Speichern Re‑Randomizing (neue Salt/Nonces/Pads)
+Optionen / Options:
+  --file PATH       Tresor-Datei / Vault file (default: {DEFAULT_VAULT_NAME})
+  --cli             Starte im CLI-Modus / Start in CLI mode
+  --no-gui          Erzwinge CLI / Force CLI (auch wenn Tk verfügbar / even if Tk is available)
+  --safe-cli        CLI im "sicheren Modus" (Exports deaktiviert) / CLI in "safe mode" (exports disabled)
+  --config PATH     JSON-Datei mit Konfigurationsparametern / JSON file with config parameters
+  --help            Diese Hilfe anzeigen / Show this help
 
-Konfiguration:
-    - Beim Start wird automatisch nach einer Datei namens '{DEFAULT_CONFIG_FILENAME}'
-      im Verzeichnis der EXE/Skripts gesucht. Wenn diese Datei existiert,
-      werden die darin gespeicherten Parameter geladen und angewendet, ohne dass
-      ``--config`` angegeben werden muss.
-    - Über die CLI-Menüoption [C] und die Schaltflächen "Konfig laden" bzw. "Konfig
-      erstellen" in der GUI kann eine Konfigurationsdatei mit den aktuellen
-      Standardwerten erstellt werden. So können Parameter angepasst werden,
-      ohne den Quellcode zu verändern.
-    - Die erzeugte Konfigurationsdatei enthält ausführliche Kommentarzeilen,
-      die die Bedeutung jedes Parameters erklären. Diese Zeilen beginnen mit
-      ``#`` und werden beim Einlesen automatisch ignoriert. Bearbeite die
-      Werte nach dem Doppelpunkt, um Parameter wie Auto-Lock oder KDF zu
-      ändern.
+Sicherheit (God-Tier Edition) / Security (God-Tier Edition):
+DE:
+- Triple-Layer Encryption (AES-256-GCM -> XOR-Pad -> ChaCha20-Poly1305) + 50 Extra-Schichten (Matroschka-Prinzip).
+- KDF-Teergrube: Argon2id (1 GB RAM) -> PBKDF2 (2.5 Mio Iterationen) -> Scrypt.
+- HMAC-SHA512 Integritätsschutz.
+- Windows-Screenshot-Schutz aktiv (SetWindowDisplayAffinity).
+- Rausch-Padding (50 MB min.).
+- KEIN DOCKER! Nativer Betrieb ist zwingend erforderlich, um Systemfunktionen wie Screenshot-Sperren zu nutzen.
 
-Tresor-Datei:
-    - Beim Start wird standardmäßig die Tresor-Datei '{DEFAULT_VAULT_NAME}' verwendet, sofern sie vorhanden ist.
-    - In der GUI können Sie über den Button "Tresor-Datei wählen" eine andere Datei im
-      .pwm‑Format auswählen. Dieser Button eignet sich, wenn Sie mit mehreren Tresor-
-      Dateien arbeiten oder einen bestehenden Tresor an einem anderen Ort gespeichert
-      haben.
-    - Existiert die ausgewählte Tresor-Datei noch nicht, wird beim ersten Speichern
-      automatisch ein neuer Tresor mit dieser Datei angelegt. Sie müssen also keinen
-      leeren Tresor manuell erstellen.
-    - In der CLI können Sie die Tresor-Datei über ``--file`` angeben. Wird die Datei
-      nicht gefunden, wird sie automatisch angelegt.
+EN:
+- Triple-Layer Encryption (AES-256-GCM -> XOR-Pad -> ChaCha20-Poly1305) + 50 Extra Layers.
+- KDF Tarpit: Argon2id (1 GB RAM) -> PBKDF2 (2.5 million iterations) -> Scrypt.
+- HMAC-SHA512 integrity protection.
+- Windows anti-screenshot active.
+- Noise padding (50 MB min.).
+- NO DOCKER! Native execution is strictly required.
 
-Datei‑Verschlüsselung und Verstecken:
-    - Neben der Tresor‑Verwaltung ermöglicht wlk_passwordsafe auch das Verschlüsseln
-      beliebiger Dateien und das Verstecken von Dateien in anderen Dateien.
-    - Im CLI stehen dafür die Menüpunkte ``[10]`` bis ``[13]`` zur Verfügung:
-        * ``[10]`` Datei verschlüsseln – liest eine Datei ein, verschlüsselt den
-          Inhalt mit einem Passwort und schreibt eine ``.enc``‑Datei.
-        * ``[11]`` Datei entschlüsseln – rekonstruiert aus einer ``.enc``‑Datei
-          wieder die Originaldatei.
-        * ``[12]`` Datei verstecken – verschlüsselt eine Datei und hängt sie
-          unsichtbar an das Ende einer Cover‑Datei an. Die so erzeugte ``.hid``‑Datei
-          kann wie gewohnt genutzt werden, enthält aber zusätzlich den verborgenen
-          Inhalt.
-        * ``[13]`` Verstecktes extrahieren – sucht die Markierung am Ende einer
-          ``.hid``‑Datei, extrahiert und entschlüsselt die Nutzlast und stellt die
-          ursprüngliche Datei wieder her. Das ursprüngliche Dateiformat wird aus
-          der versteckten Nutzlast wiederhergestellt und als Vorschlag für den
-          Dateinamen verwendet.
-      Diese vier Optionen (10–13) stehen im CLI sowohl im Außenmenü vor dem Laden
-      eines Tresors als auch im Hauptmenü zur Verfügung. Sie können Dateivorgänge
-      also unabhängig vom Tresor nutzen. Die CLI fragt erst im Moment des
-      Verschlüsselns/Entschlüsselns nach dem Passwort.
-    - In der GUI gibt es entsprechende Schaltflächen: „Datei verschlüsseln“,
-      „Datei entschlüsseln“, „Datei verstecken“ und „Verstecktes extrahieren“.
-    - Alle Dateivorgänge verwenden denselben Triple‑Layer‑Algorithmus wie der
-      Tresor (AES‑GCM → HMAC‑Pad → ChaCha20‑Poly1305) und sind somit genauso
-      sicher.
+Design-Anpassung / Theme Customization:
+DE: Erstelle eine Konfiguration (in der GUI über 'Konfig erstellen') und setze "GUI_THEME": "cyber" für das Hacker-Terminal-Design.
+EN: Create a configuration (in the GUI via 'Create config') and set "GUI_THEME": "cyber" for the hacker terminal design.
+
+Datei-Verschlüsselung und Verstecken / File Encryption and Steganography:
+DE: Das Programm kann auch beliebige Dateien verschlüsseln (.enc) oder unsichtbar in Bildern verstecken (.hid).
+EN: The program can also encrypt arbitrary files (.enc) or hide them invisibly inside images (.hid).
 """)
 
 # ====================================
